@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "AI Input Sanitization",
+  "version": "1.0",
+  "description": "Detects and alerts about PII (Personally Identifiable Information) in AI chat inputs and file uploads",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["sanitizer.html", "sanitizer.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

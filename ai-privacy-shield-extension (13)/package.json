@@ -1,0 +1,16 @@
+{
+  "name": "ai-privacy-shield-extension",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "watch": "node esbuild.config.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.30",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.2"
+  }
+}

@@ -1,11 +1,50 @@
 import type { DetectionPattern } from '../types';
+import { isLikelyCreditCard, isLikelyExpiry, isLikelyIpv4 } from './validators';
 
 export const PII_PATTERNS: DetectionPattern[] = [
   {
-    key: 'financial',
+    key: 'fullNameContextual',
+    label: 'Full Name',
+    severity: 'high',
+    regex: /(?<=\b(?:full\s*name|name)\s*:\s*)[A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z]+){1,3}\b/gi
+  },
+  {
+    key: 'ssn',
     label: 'Financial',
     severity: 'critical',
-    regex: /\b(?:(?:\d{3}-\d{2}-\d{4})|(?:\d{9})|(?:\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}))\b/g
+    regex: /\b(?:\d{3}-\d{2}-\d{4}|\d{9})\b/g
+  },
+  {
+    key: 'creditCard',
+    label: 'Financial',
+    severity: 'critical',
+    regex: /\b(?:\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}|\d{4}[\s-]?\d{6}[\s-]?\d{5})\b/g,
+    validate: (match) => isLikelyCreditCard(match)
+  },
+  {
+    key: 'bankAccount',
+    label: 'Bank Account Number',
+    severity: 'critical',
+    regex: /(?<=\bbank\s*account(?:\s*number)?\s*:\s*)\d{8,17}\b/gi
+  },
+  {
+    key: 'routingNumber',
+    label: 'Routing Number',
+    severity: 'critical',
+    regex: /(?<=\brouting\s*number\s*:\s*)\d{9}\b/gi
+  },
+  {
+    key: 'cvv',
+    label: 'CVV',
+    severity: 'critical',
+    regex: /(?<=\b(?:cvv|cvc|security\s*code)\s*:\s*)\d{3,4}\b/gi
+  },
+  {
+    key: 'cardExpiry',
+    label: 'Card Expiry',
+    severity: 'high',
+    regex: /(?<=\b(?:exp|expiry|expiration)\s*:\s*)(?:0[1-9]|1[0-2])[\/-](?:\d{2}|\d{4})\b/gi,
+    validate: (match) => isLikelyExpiry(match)
   },
   {
     key: 'email',
@@ -23,7 +62,7 @@ export const PII_PATTERNS: DetectionPattern[] = [
     key: 'streetAddress',
     label: 'Street Address',
     severity: 'high',
-    regex: /\b\d+\s+[A-Za-z]+\s+(Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Circle|Cir|Way|Place|Pl)\b/gi
+    regex: /\b(?:address\s*:\s*)?\d+\s+[A-Za-z0-9.'\-\s]+,\s*[A-Za-z.\-\s]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/gi
   },
   {
     key: 'zipCode',
@@ -53,7 +92,8 @@ export const PII_PATTERNS: DetectionPattern[] = [
     key: 'ipAddress',
     label: 'IP Address',
     severity: 'medium',
-    regex: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g
+    regex: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g,
+    validate: (match) => isLikelyIpv4(match)
   },
   {
     key: 'apiKey',

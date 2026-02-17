@@ -5,6 +5,7 @@ export interface DetectionPattern {
   label: string;
   severity: Severity;
   regex: RegExp;
+  validate?: (match: string) => boolean;
 }
 
 export interface DetectedMatch {

@@ -313,6 +313,34 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function fitReplacementLength(replacement: string, targetLength: number): string {
+  if (replacement.length === targetLength) {
+    return replacement;
+  }
+  if (replacement.length > targetLength) {
+    return replacement.slice(0, targetLength);
+  }
+  return replacement + '█'.repeat(targetLength - replacement.length);
+}
+
+function containsResidualRisk(matches: DetectedMatch[]): boolean {
+  const blockedKeys = new Set([
+    'ssn',
+    'creditCard',
+    'bankAccount',
+    'routingNumber',
+    'cvv',
+    'cardExpiry',
+    'fullNameContextual',
+    'email',
+    'phone',
+    'driversLicense',
+    'dob'
+  ]);
+
+  return matches.some((match) => blockedKeys.has(match.key));
+}
+
 function sanitizePlainText(inputText: string, mode: AutoMode): { cleanedText: string; replacements: number } {
   const matches = detectMatches(inputText, PII_PATTERNS).sort((a, b) => b.index - a.index);
 
@@ -327,7 +355,8 @@ function sanitizePlainText(inputText: string, mode: AutoMode): { cleanedText: st
   for (const pii of matches) {
     const before = cleanedText.substring(0, pii.index);
     const after = cleanedText.substring(pii.index + pii.length);
-    const replacement = mode === 'hide' ? '█'.repeat(pii.length) : generateFakeData(pii.value, pii.type);
+    const generated = mode === 'hide' ? '█'.repeat(pii.length) : generateFakeData(pii.value, pii.type);
+    const replacement = fitReplacementLength(generated, pii.length);
     cleanedText = before + replacement + after;
   }
 
@@ -367,22 +396,41 @@ async function sanitizeDocxPreservingFormat(file: File, mode: AutoMode): Promise
     }
 
     const elements = Array.from(doc.getElementsByTagName('*'));
-    for (const element of elements) {
-      if (element.localName !== 't') {
+    const paragraphs = elements.filter((element) => element.localName === 'p');
+
+    for (const paragraph of paragraphs) {
+      const paragraphElements = Array.from(paragraph.getElementsByTagName('*'));
+      const textNodes = paragraphElements.filter((element) => element.localName === 't');
+      if (textNodes.length === 0) {
         continue;
       }
 
-      const originalText = element.textContent ?? '';
-      if (!originalText.trim()) {
+      const originalSegments = textNodes.map((node) => node.textContent ?? '');
+      const paragraphText = originalSegments.join('');
+      if (!paragraphText.trim()) {
         continue;
       }
 
-      const { cleanedText, replacements } = sanitizePlainText(originalText, mode);
-      if (replacements > 0) {
-        element.textContent = cleanedText;
-        totalReplacements += replacements;
-      }
+      const { cleanedText, replacements } = sanitizePlainText(paragraphText, mode);
       cleanedTextParts.push(cleanedText);
+
+      if (replacements === 0) {
+        continue;
+      }
+
+      totalReplacements += replacements;
+
+      let offset = 0;
+      for (let index = 0; index < textNodes.length; index += 1) {
+        const node = textNodes[index];
+        if (!node) {
+          continue;
+        }
+        const segmentLength = originalSegments[index]?.length ?? 0;
+        const nextOffset = offset + segmentLength;
+        node.textContent = cleanedText.slice(offset, nextOffset);
+        offset = nextOffset;
+      }
     }
 
     const updatedXml = serializer.serializeToString(doc);
@@ -444,6 +492,17 @@ async function performAutoClean(mode: AutoMode): Promise<void> {
 
     try {
       const { blob, previewText, replacements } = await sanitizeDocxPreservingFormat(currentFile, mode);
+      const residualMatches = detectMatches(previewText, PII_PATTERNS);
+      if (containsResidualRisk(residualMatches)) {
+        sanitizedBlob = null;
+        sanitizedContent = previewText;
+        downloadBtn.disabled = true;
+        sanitizedPreview.classList.remove('docx-layout');
+        sanitizedPreview.innerHTML = `<pre>${escapeHtml(previewText)}</pre>`;
+        alert(`Sanitization blocked: ${residualMatches.length} sensitive value(s) still detected after cleaning.`);
+        return;
+      }
+
       sanitizedBlob = blob;
       sanitizedContent = previewText;
       await renderDocxPreview(sanitizedPreview, blob);
@@ -466,7 +525,16 @@ async function performAutoClean(mode: AutoMode): Promise<void> {
 
   const inputText = currentFileContent;
   const { cleanedText, replacements } = sanitizePlainText(inputText, mode);
+  const residualMatches = detectMatches(cleanedText, PII_PATTERNS);
   sanitizedBlob = null;
+
+  if (containsResidualRisk(residualMatches)) {
+    sanitizedContent = cleanedText;
+    sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
+    downloadBtn.disabled = true;
+    alert(`Sanitization blocked: ${residualMatches.length} sensitive value(s) still detected after cleaning.`);
+    return;
+  }
 
   if (replacements === 0) {
     sanitizedContent = inputText;

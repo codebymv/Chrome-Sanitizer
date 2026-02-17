@@ -23783,26 +23783,142 @@
       const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
       let match;
       while ((match = regex.exec(text)) !== null) {
+        const value = match[0];
+        if (pattern.validate && !pattern.validate(value)) {
+          continue;
+        }
         matches.push({
           key: pattern.key,
           type: pattern.label,
           severity: pattern.severity,
-          value: match[0],
+          value,
           index: match.index,
-          length: match[0].length
+          length: value.length
         });
       }
     }
-    return matches;
+    const sorted = [...matches].sort((left, right) => {
+      if (right.length !== left.length) {
+        return right.length - left.length;
+      }
+      return left.index - right.index;
+    });
+    const accepted = [];
+    const occupied = /* @__PURE__ */ new Set();
+    const dedupe = /* @__PURE__ */ new Set();
+    for (const item of sorted) {
+      const dedupeKey = `${item.key}|${item.index}|${item.value}`;
+      if (dedupe.has(dedupeKey)) {
+        continue;
+      }
+      let overlaps = false;
+      for (let position = item.index; position < item.index + item.length; position += 1) {
+        if (occupied.has(position)) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (overlaps) {
+        continue;
+      }
+      for (let position = item.index; position < item.index + item.length; position += 1) {
+        occupied.add(position);
+      }
+      dedupe.add(dedupeKey);
+      accepted.push(item);
+    }
+    return accepted.sort((left, right) => left.index - right.index);
+  }
+
+  // src/shared/pii/validators.ts
+  function digitsOnly(value) {
+    return value.replace(/\D/g, "");
+  }
+  function isLikelyCreditCard(value) {
+    const digits = digitsOnly(value);
+    if (digits.length < 13 || digits.length > 19) {
+      return false;
+    }
+    let sum = 0;
+    let shouldDouble = false;
+    for (let index = digits.length - 1; index >= 0; index -= 1) {
+      let digit = Number(digits[index]);
+      if (shouldDouble) {
+        digit *= 2;
+        if (digit > 9) {
+          digit -= 9;
+        }
+      }
+      sum += digit;
+      shouldDouble = !shouldDouble;
+    }
+    return sum % 10 === 0;
+  }
+  function isLikelyIpv4(value) {
+    const parts = value.split(".");
+    if (parts.length !== 4) {
+      return false;
+    }
+    return parts.every((part) => {
+      const parsed = Number(part);
+      return Number.isInteger(parsed) && parsed >= 0 && parsed <= 255;
+    });
+  }
+  function isLikelyExpiry(value) {
+    const cleaned = value.replace(/\s/g, "");
+    const matched = cleaned.match(/(0[1-9]|1[0-2])[\/-](\d{2}|\d{4})/);
+    if (!matched) {
+      return false;
+    }
+    const month = Number(matched[1]);
+    return month >= 1 && month <= 12;
   }
 
   // src/shared/pii/patterns.ts
   var PII_PATTERNS = [
     {
-      key: "financial",
+      key: "fullNameContextual",
+      label: "Full Name",
+      severity: "high",
+      regex: /(?<=\b(?:full\s*name|name)\s*:\s*)[A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z]+){1,3}\b/gi
+    },
+    {
+      key: "ssn",
       label: "Financial",
       severity: "critical",
-      regex: /\b(?:(?:\d{3}-\d{2}-\d{4})|(?:\d{9})|(?:\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}))\b/g
+      regex: /\b(?:\d{3}-\d{2}-\d{4}|\d{9})\b/g
+    },
+    {
+      key: "creditCard",
+      label: "Financial",
+      severity: "critical",
+      regex: /\b(?:\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}|\d{4}[\s-]?\d{6}[\s-]?\d{5})\b/g,
+      validate: (match) => isLikelyCreditCard(match)
+    },
+    {
+      key: "bankAccount",
+      label: "Bank Account Number",
+      severity: "critical",
+      regex: /(?<=\bbank\s*account(?:\s*number)?\s*:\s*)\d{8,17}\b/gi
+    },
+    {
+      key: "routingNumber",
+      label: "Routing Number",
+      severity: "critical",
+      regex: /(?<=\brouting\s*number\s*:\s*)\d{9}\b/gi
+    },
+    {
+      key: "cvv",
+      label: "CVV",
+      severity: "critical",
+      regex: /(?<=\b(?:cvv|cvc|security\s*code)\s*:\s*)\d{3,4}\b/gi
+    },
+    {
+      key: "cardExpiry",
+      label: "Card Expiry",
+      severity: "high",
+      regex: /(?<=\b(?:exp|expiry|expiration)\s*:\s*)(?:0[1-9]|1[0-2])[\/-](?:\d{2}|\d{4})\b/gi,
+      validate: (match) => isLikelyExpiry(match)
     },
     {
       key: "email",
@@ -23820,7 +23936,7 @@
       key: "streetAddress",
       label: "Street Address",
       severity: "high",
-      regex: /\b\d+\s+[A-Za-z]+\s+(Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Circle|Cir|Way|Place|Pl)\b/gi
+      regex: /\b(?:address\s*:\s*)?\d+\s+[A-Za-z0-9.'\-\s]+,\s*[A-Za-z.\-\s]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/gi
     },
     {
       key: "zipCode",
@@ -23850,7 +23966,8 @@
       key: "ipAddress",
       label: "IP Address",
       severity: "medium",
-      regex: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g
+      regex: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g,
+      validate: (match) => isLikelyIpv4(match)
     },
     {
       key: "apiKey",
@@ -53378,6 +53495,31 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       reader.readAsDataURL(file);
     });
   }
+  function fitReplacementLength(replacement, targetLength) {
+    if (replacement.length === targetLength) {
+      return replacement;
+    }
+    if (replacement.length > targetLength) {
+      return replacement.slice(0, targetLength);
+    }
+    return replacement + "\u2588".repeat(targetLength - replacement.length);
+  }
+  function containsResidualRisk(matches) {
+    const blockedKeys = /* @__PURE__ */ new Set([
+      "ssn",
+      "creditCard",
+      "bankAccount",
+      "routingNumber",
+      "cvv",
+      "cardExpiry",
+      "fullNameContextual",
+      "email",
+      "phone",
+      "driversLicense",
+      "dob"
+    ]);
+    return matches.some((match) => blockedKeys.has(match.key));
+  }
   function sanitizePlainText(inputText, mode) {
     const matches = detectMatches(inputText, PII_PATTERNS).sort((a, b) => b.index - a.index);
     if (matches.length === 0) {
@@ -53390,7 +53532,8 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     for (const pii of matches) {
       const before2 = cleanedText.substring(0, pii.index);
       const after2 = cleanedText.substring(pii.index + pii.length);
-      const replacement = mode === "hide" ? "\u2588".repeat(pii.length) : generateFakeData(pii.value, pii.type);
+      const generated = mode === "hide" ? "\u2588".repeat(pii.length) : generateFakeData(pii.value, pii.type);
+      const replacement = fitReplacementLength(generated, pii.length);
       cleanedText = before2 + replacement + after2;
     }
     return {
@@ -53419,20 +53562,35 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
         throw new Error(`Could not parse DOCX XML part: ${target}`);
       }
       const elements = Array.from(doc.getElementsByTagName("*"));
-      for (const element of elements) {
-        if (element.localName !== "t") {
+      const paragraphs = elements.filter((element) => element.localName === "p");
+      for (const paragraph of paragraphs) {
+        const paragraphElements = Array.from(paragraph.getElementsByTagName("*"));
+        const textNodes = paragraphElements.filter((element) => element.localName === "t");
+        if (textNodes.length === 0) {
           continue;
         }
-        const originalText = element.textContent ?? "";
-        if (!originalText.trim()) {
+        const originalSegments = textNodes.map((node) => node.textContent ?? "");
+        const paragraphText = originalSegments.join("");
+        if (!paragraphText.trim()) {
           continue;
         }
-        const { cleanedText, replacements } = sanitizePlainText(originalText, mode);
-        if (replacements > 0) {
-          element.textContent = cleanedText;
-          totalReplacements += replacements;
-        }
+        const { cleanedText, replacements } = sanitizePlainText(paragraphText, mode);
         cleanedTextParts.push(cleanedText);
+        if (replacements === 0) {
+          continue;
+        }
+        totalReplacements += replacements;
+        let offset = 0;
+        for (let index = 0; index < textNodes.length; index += 1) {
+          const node = textNodes[index];
+          if (!node) {
+            continue;
+          }
+          const segmentLength = originalSegments[index]?.length ?? 0;
+          const nextOffset = offset + segmentLength;
+          node.textContent = cleanedText.slice(offset, nextOffset);
+          offset = nextOffset;
+        }
       }
       const updatedXml = serializer.serializeToString(doc);
       zip.file(target, updatedXml);
@@ -53483,6 +53641,16 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       }
       try {
         const { blob, previewText, replacements: replacements2 } = await sanitizeDocxPreservingFormat(currentFile, mode);
+        const residualMatches2 = detectMatches(previewText, PII_PATTERNS);
+        if (containsResidualRisk(residualMatches2)) {
+          sanitizedBlob = null;
+          sanitizedContent = previewText;
+          downloadBtn.disabled = true;
+          sanitizedPreview.classList.remove("docx-layout");
+          sanitizedPreview.innerHTML = `<pre>${escapeHtml(previewText)}</pre>`;
+          alert(`Sanitization blocked: ${residualMatches2.length} sensitive value(s) still detected after cleaning.`);
+          return;
+        }
         sanitizedBlob = blob;
         sanitizedContent = previewText;
         await renderDocxPreview(sanitizedPreview, blob);
@@ -53502,7 +53670,15 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     sanitizedPreview.classList.remove("docx-layout");
     const inputText = currentFileContent;
     const { cleanedText, replacements } = sanitizePlainText(inputText, mode);
+    const residualMatches = detectMatches(cleanedText, PII_PATTERNS);
     sanitizedBlob = null;
+    if (containsResidualRisk(residualMatches)) {
+      sanitizedContent = cleanedText;
+      sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
+      downloadBtn.disabled = true;
+      alert(`Sanitization blocked: ${residualMatches.length} sensitive value(s) still detected after cleaning.`);
+      return;
+    }
     if (replacements === 0) {
       sanitizedContent = inputText;
       sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(inputText) : `<pre>${escapeHtml(inputText)}</pre>`;

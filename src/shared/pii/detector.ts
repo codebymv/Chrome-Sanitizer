@@ -8,18 +8,59 @@ export function detectMatches(text: string, patterns: DetectionPattern[]): Detec
     let match: RegExpExecArray | null;
 
     while ((match = regex.exec(text)) !== null) {
+      const value = match[0];
+      if (pattern.validate && !pattern.validate(value)) {
+        continue;
+      }
+
       matches.push({
         key: pattern.key,
         type: pattern.label,
         severity: pattern.severity,
-        value: match[0],
+        value,
         index: match.index,
-        length: match[0].length
+        length: value.length
       });
     }
   }
 
-  return matches;
+  const sorted = [...matches].sort((left, right) => {
+    if (right.length !== left.length) {
+      return right.length - left.length;
+    }
+    return left.index - right.index;
+  });
+
+  const accepted: DetectedMatch[] = [];
+  const occupied = new Set<number>();
+  const dedupe = new Set<string>();
+
+  for (const item of sorted) {
+    const dedupeKey = `${item.key}|${item.index}|${item.value}`;
+    if (dedupe.has(dedupeKey)) {
+      continue;
+    }
+
+    let overlaps = false;
+    for (let position = item.index; position < item.index + item.length; position += 1) {
+      if (occupied.has(position)) {
+        overlaps = true;
+        break;
+      }
+    }
+
+    if (overlaps) {
+      continue;
+    }
+
+    for (let position = item.index; position < item.index + item.length; position += 1) {
+      occupied.add(position);
+    }
+    dedupe.add(dedupeKey);
+    accepted.push(item);
+  }
+
+  return accepted.sort((left, right) => left.index - right.index);
 }
 
 export function summarizeMatches(matches: DetectedMatch[]): DetectionSummary[] {

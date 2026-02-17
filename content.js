@@ -690,11 +690,20 @@ class PrivacyShield {
   async scanFile(file) {
     this.sessionStats.filesScanned++;
 
-    // Only scan text-based files
-    const textTypes = ['text/', 'application/json', 'application/xml', '.txt', '.csv', '.md', '.doc', '.docx'];
-    const isTextFile = textTypes.some(type => 
-      file.type.includes(type) || file.name.toLowerCase().endsWith(type.replace('application/', '.'))
-    );
+    const fileName = file.name.toLowerCase();
+    const textExtensions = ['.txt', '.csv', '.tsv', '.md', '.json', '.xml', '.log', '.html', '.htm'];
+    const supportedTextMime = ['text/', 'application/json', 'application/xml'];
+    const isTextFile =
+      supportedTextMime.some((type) => file.type.includes(type)) ||
+      textExtensions.some((ext) => fileName.endsWith(ext));
+
+    if (fileName.endsWith('.docx') || fileName.endsWith('.pdf')) {
+      this.showNotification(
+        `File uploaded: ${file.name}. Deep decoding for DOCX/PDF is available in the File Sanitizer tool.`,
+        'info'
+      );
+      return;
+    }
 
     if (!isTextFile) {
       // Show notification for non-text files

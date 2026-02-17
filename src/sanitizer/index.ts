@@ -1,8 +1,12 @@
 import { detectMatches } from '../shared/pii/detector';
 import { PII_PATTERNS } from '../shared/pii/patterns';
 import type { DetectedMatch } from '../shared/types';
+import { decodeUploadedFile } from '../shared/file/registry';
+import type { DecodedFile } from '../shared/file/types';
+import { getExtension, isImageFile, escapeHtml } from '../shared/file/utils';
+import Papa from 'papaparse';
 
-type FileKind = 'text' | 'csv' | 'image' | '';
+type FileKind = 'text' | 'csv' | 'docx' | 'pdf' | 'image' | '';
 type AutoMode = 'hide' | 'replace';
 
 const uploadZone = mustGet<HTMLElement>('uploadZone');
@@ -26,6 +30,7 @@ let sanitizedContent: string | null = null;
 let detectedPII: DetectedMatch[] = [];
 let fileType: FileKind = '';
 let lastAutoSelected: HTMLInputElement | null = null;
+let currentDecodedFile: DecodedFile | null = null;
 
 uploadZone.addEventListener('click', () => {
   fileInput.click();
@@ -129,6 +134,7 @@ function clearEverything(): void {
   sanitizedContent = null;
   detectedPII = [];
   fileType = '';
+  currentDecodedFile = null;
 
   autoModeRadios.forEach((radio) => {
     radio.checked = false;
@@ -178,9 +184,10 @@ async function processFile(file: File): Promise<void> {
   currentFile = file;
   currentFileName = file.name;
   resetControlStateForNewFile();
+  currentDecodedFile = null;
 
-  const fileName = file.name.toLowerCase();
-  const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(fileName);
+  const extension = getExtension(file.name);
+  const isImage = isImageFile(file, extension);
 
   if (isImage) {
     fileType = 'image';
@@ -188,24 +195,59 @@ async function processFile(file: File): Promise<void> {
     return;
   }
 
-  if (fileName.endsWith('.csv')) {
-    fileType = 'csv';
-    await displayTextOrCsv(file, 'csv');
-    return;
-  }
-
-  fileType = 'text';
-  await displayTextOrCsv(file, 'text');
+  await displayDecodedFile(file);
 }
 
-async function displayTextOrCsv(file: File, kind: 'text' | 'csv'): Promise<void> {
+async function displayDecodedFile(file: File): Promise<void> {
   try {
-    const text = await file.text();
-    currentFileContent = text;
-    detectedPII = detectMatches(text, PII_PATTERNS);
+    const decoded = await decodeUploadedFile(file);
+    currentDecodedFile = decoded;
 
-    originalPreview.innerHTML = kind === 'csv' ? csvToTable(text) : `<pre>${escapeHtml(text)}</pre>`;
-    sanitizedPreview.innerHTML = '<pre style="color: #6366f1; text-align: center; padding: 40px;">⚡ CLICK CLEAN TO SANITIZE ⚡</pre>';
+    if (decoded.kind === 'unsupported') {
+      currentFileContent = null;
+      detectedPII = [];
+      fileType = '';
+      originalPreview.innerHTML = decoded.previewHtml;
+      sanitizedPreview.innerHTML = `<pre>Cannot process this file type.\n${decoded.unsupportedReason ?? 'Unsupported file format.'}</pre>`;
+      autoModeRadios.forEach((radio) => {
+        radio.checked = false;
+        radio.disabled = true;
+      });
+      manualModeRadios.forEach((radio) => {
+        radio.checked = false;
+        radio.disabled = true;
+      });
+      autoCleanBtn.disabled = true;
+      manualCleanBtn.disabled = true;
+      downloadBtn.disabled = true;
+      showPreview();
+      return;
+    }
+
+    currentFileContent = decoded.extractedText;
+    detectedPII = detectMatches(decoded.extractedText, PII_PATTERNS);
+    fileType = decoded.kind;
+
+    originalPreview.innerHTML = decoded.previewHtml;
+
+    if (!decoded.canSanitizePreservingFormat) {
+      sanitizedPreview.innerHTML = `<pre>${decoded.unsupportedReason ?? 'Preserve-format sanitization is not available for this file type yet.'}</pre>`;
+      autoModeRadios.forEach((radio) => {
+        radio.checked = false;
+        radio.disabled = true;
+      });
+      manualModeRadios.forEach((radio) => {
+        radio.checked = false;
+        radio.disabled = true;
+      });
+      autoCleanBtn.disabled = true;
+      manualCleanBtn.disabled = true;
+      downloadBtn.disabled = true;
+      showPreview();
+      return;
+    }
+
+    sanitizedPreview.innerHTML = '<pre>Choose Hide or Replace, then click Clean.</pre>';
 
     showPreview();
   } catch (error) {
@@ -260,6 +302,11 @@ function performAutoClean(mode: AutoMode): void {
 
   if (fileType === 'image') {
     alert('Image sanitization is not supported yet. Please upload text or CSV.');
+    return;
+  }
+
+  if (currentDecodedFile && !currentDecodedFile.canSanitizePreservingFormat) {
+    alert(currentDecodedFile.unsupportedReason ?? 'Preserve-format sanitization is not available for this file type yet.');
     return;
   }
 
@@ -350,7 +397,8 @@ function downloadSanitizedFile(): void {
     return;
   }
 
-  const blob = new Blob([sanitizedContent], { type: fileType === 'csv' ? 'text/csv' : 'text/plain' });
+  const blobType = fileType === 'csv' ? 'text/csv' : 'text/plain';
+  const blob = new Blob([sanitizedContent], { type: blobType });
   const url = URL.createObjectURL(blob);
 
   const link = document.createElement('a');
@@ -364,12 +412,14 @@ function downloadSanitizedFile(): void {
 }
 
 function csvToTable(csvText: string): string {
-  const lines = csvText.split('\n').filter((line) => line.trim());
-  if (lines.length === 0) {
+  const parsed = Papa.parse<string[]>(csvText, {
+    skipEmptyLines: true
+  });
+
+  const rows = parsed.data.map((row) => row.map((cell) => String(cell ?? '')));
+  if (rows.length === 0) {
     return '<pre>Empty file</pre>';
   }
-
-  const rows = lines.map(parseCsvLine);
 
   let html = '<table>';
   html += '<thead><tr>';
@@ -392,35 +442,6 @@ function csvToTable(csvText: string): string {
 
   html += '</table>';
   return html;
-}
-
-function parseCsvLine(line: string): string[] {
-  const cells: string[] = [];
-  let currentCell = '';
-  let inQuotes = false;
-
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
-    if (char === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-    if (char === ',' && !inQuotes) {
-      cells.push(currentCell.trim());
-      currentCell = '';
-      continue;
-    }
-    currentCell += char;
-  }
-
-  cells.push(currentCell.trim());
-  return cells;
-}
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 function showPreview(): void {

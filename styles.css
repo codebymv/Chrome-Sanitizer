@@ -93,15 +93,15 @@
   50% { box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35), 0 0 12px rgba(220, 38, 38, 0.2); }
 }
 
-/* ─── Wrench Button ─────────────────────────────────────── */
+/* ─── Soap / Sanitizer Button ───────────────────────────── */
 .shield-wrench {
   position: fixed;
   right: 20px;
   top: 50%;
   transform: translate(-50%, -50%);
   margin-top: -35px;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: var(--ps-surface);
   border: 2px solid var(--ps-accent);
@@ -115,6 +115,7 @@
   z-index: var(--ps-z-wrench);
   opacity: 1;
   pointer-events: auto !important;
+  overflow: hidden;
 }
 
 .shield-wrench:hover {

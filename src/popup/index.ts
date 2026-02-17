@@ -3,8 +3,10 @@ import {
   getLatestDetection,
   getSessionStats,
   getShieldEnabled,
+  setSessionStats,
   setShieldEnabled
 } from '../shared/storage';
+import { defaultSessionStats } from '../shared/types';
 import type { DetectionSummary } from '../shared/types';
 
 function mustGet<T extends HTMLElement>(id: string): T {
@@ -154,10 +156,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderLatestDetection(latestDetectionDiv, latestDetection.detected, latestDetection.timestamp);
   }
 
+  const openSanitizerBtn = mustGet<HTMLButtonElement>('openSanitizerBtn');
+  const clearSessionBtn = mustGet<HTMLButtonElement>('clearSessionBtn');
+
   enableToggle.addEventListener('change', async () => {
     const nextEnabled = enableToggle.checked;
     await setShieldEnabled(nextEnabled);
     updateStatus(status, nextEnabled);
+  });
+
+  openSanitizerBtn.addEventListener('click', () => {
+    const sanitizerUrl = chrome.runtime.getURL('sanitizer.html');
+    void chrome.tabs.create({ url: sanitizerUrl });
+  });
+
+  clearSessionBtn.addEventListener('click', async () => {
+    await setSessionStats(defaultSessionStats);
+    redactedCount.textContent = '0';
+    protectedTypes.textContent = '0 types';
+    latestDetectionDiv.style.display = 'none';
+    latestDetectionDiv.innerHTML = '';
+
+    const breakdown = document.querySelector('.stats-breakdown');
+    if (breakdown) {
+      breakdown.remove();
+    }
   });
 
   monitoredLink.addEventListener('click', (event) => {

@@ -53596,6 +53596,9 @@ section.${c}>footer { z-index: 1; }
   var manualHelperText = mustGet("manualHelperText");
   var manualSummary = mustGet("manualSummary");
   var manualList = mustGet("manualList");
+  var manualSelectionPopup = mustGet("manualSelectionPopup");
+  var manualPopupHideBtn = mustGet("manualPopupHideBtn");
+  var manualPopupReplaceBtn = mustGet("manualPopupReplaceBtn");
   var autoModeRadios = Array.from(document.querySelectorAll('input[name="autoMode"]'));
   var manualModeRadios = Array.from(document.querySelectorAll('input[name="manualMode"]'));
   var currentFile = null;
@@ -53612,6 +53615,7 @@ section.${c}>footer { z-index: 1; }
   var selectedManualMode = "";
   var manualSelection = /* @__PURE__ */ new Map();
   var manualCandidates = [];
+  var pendingPopupCandidateIds = [];
   uploadZone.addEventListener("click", () => {
     fileInput.click();
   });
@@ -53714,6 +53718,33 @@ section.${c}>footer { z-index: 1; }
     }
     const isChecked = !manualSelection.has(id);
     toggleManualSelection(id, isChecked);
+  });
+  originalPreview.addEventListener("mouseup", () => {
+    if (selectedManualMode !== "select") {
+      hideManualSelectionPopup();
+      return;
+    }
+    if (fileType === "csv") {
+      hideManualSelectionPopup();
+      return;
+    }
+    maybeOpenManualSelectionPopup();
+  });
+  document.addEventListener("scroll", () => {
+    hideManualSelectionPopup();
+  }, true);
+  document.addEventListener("mousedown", (event) => {
+    const target = event.target;
+    if (manualSelectionPopup.contains(target)) {
+      return;
+    }
+    hideManualSelectionPopup();
+  });
+  manualPopupHideBtn.addEventListener("click", () => {
+    applyPopupSelection("hide");
+  });
+  manualPopupReplaceBtn.addEventListener("click", () => {
+    applyPopupSelection("replace");
   });
   autoCleanBtn.addEventListener("click", () => {
     if (!currentFileContent) {
@@ -53824,6 +53855,8 @@ section.${c}>footer { z-index: 1; }
     selectedManualMode = "";
     manualSelection = /* @__PURE__ */ new Map();
     manualCandidates = [];
+    pendingPopupCandidateIds = [];
+    hideManualSelectionPopup();
     autoModeRadios.forEach((radio) => {
       radio.disabled = false;
     });
@@ -53857,6 +53890,8 @@ section.${c}>footer { z-index: 1; }
     selectedManualMode = "";
     manualSelection = /* @__PURE__ */ new Map();
     manualCandidates = [];
+    pendingPopupCandidateIds = [];
+    hideManualSelectionPopup();
     autoCleanBtn.disabled = true;
     manualCleanBtn.disabled = true;
     downloadBtn.disabled = true;
@@ -53930,7 +53965,7 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
           radio.disabled = false;
         });
         updateManualReviewUi();
-        updateManualHelperText("Manual mode for DOCX uses the review list. Inline highlight is not shown in document preview.");
+        updateManualHelperText("Manual mode for DOCX switches to a selectable text preview with inline highlights.");
       } else {
         originalPreview.classList.remove("docx-layout");
         originalPreview.innerHTML = decoded.previewHtml;
@@ -54121,6 +54156,57 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       replacements: orderedMatches.length,
       unchangedMatches
     };
+  }
+  function maybeOpenManualSelectionPopup() {
+    if (!selectedManualMode || selectedManualMode !== "select" || manualCandidates.length === 0) {
+      hideManualSelectionPopup();
+      return;
+    }
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      hideManualSelectionPopup();
+      return;
+    }
+    const range2 = selection.getRangeAt(0);
+    if (!originalPreview.contains(range2.commonAncestorContainer)) {
+      hideManualSelectionPopup();
+      return;
+    }
+    const previewRoot = originalPreview.querySelector("pre") ?? originalPreview;
+    const prefixRange = document.createRange();
+    prefixRange.selectNodeContents(previewRoot);
+    prefixRange.setEnd(range2.startContainer, range2.startOffset);
+    const selectedText = selection.toString();
+    const start = prefixRange.toString().length;
+    const end = start + selectedText.length;
+    const overlapping = manualCandidates.filter((candidate) => candidate.match.index < end && candidate.match.index + candidate.match.length > start).map((candidate) => candidate.id);
+    if (overlapping.length === 0) {
+      hideManualSelectionPopup();
+      return;
+    }
+    pendingPopupCandidateIds = overlapping;
+    const rect = range2.getBoundingClientRect();
+    const popupWidth = 152;
+    const left = Math.max(8, Math.min(window.innerWidth - popupWidth - 8, rect.left + rect.width / 2 - popupWidth / 2));
+    const top = Math.max(8, rect.top - 42);
+    manualSelectionPopup.style.left = `${left}px`;
+    manualSelectionPopup.style.top = `${top}px`;
+    manualSelectionPopup.classList.add("visible");
+  }
+  function hideManualSelectionPopup() {
+    manualSelectionPopup.classList.remove("visible");
+    pendingPopupCandidateIds = [];
+  }
+  function applyPopupSelection(mode) {
+    if (pendingPopupCandidateIds.length === 0) {
+      hideManualSelectionPopup();
+      return;
+    }
+    applySelectedMode(mode, true);
+    pendingPopupCandidateIds.forEach((id) => toggleManualSelection(id, true));
+    hideManualSelectionPopup();
+    window.getSelection()?.removeAllRanges();
+    setStatus(`Selected instance(s) queued for manual ${mode}. Click Apply Selection to sanitize.`, "success");
   }
   async function sanitizeDocxPreservingFormat(file, mode, selectedOccurrences) {
     const buffer = await file.arrayBuffer();
@@ -54382,7 +54468,7 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     return `${value.slice(0, 35)}\u2026`;
   }
   function renderManualPreview() {
-    if (!currentFileContent || !selectedManualMode || fileType === "docx") {
+    if (!currentFileContent || !selectedManualMode) {
       return;
     }
     const ordered = [...manualCandidates].sort((a, b) => a.match.index - b.match.index);
@@ -54424,6 +54510,7 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     }
     updateManualReviewUi();
     renderManualPreview();
+    hideManualSelectionPopup();
     updateManualHelperText();
     setStatus(`Manual ${mode} mode is active. Toggle highlighted values, then click Apply Selection.`, "success");
   }
@@ -54463,14 +54550,14 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       return;
     }
     if (fileType === "docx") {
-      manualHelperText.textContent = "Manual mode for DOCX works from the review list and applies selected items while preserving format.";
+      manualHelperText.textContent = selectedManualMode === "select" ? "Select text in preview to open Hide/Replace popup, then click Apply Selection." : "Highlight mode marks detected instances in preview. Deselect any you want to keep, then apply.";
       return;
     }
     if (!selectedManualMode) {
       manualHelperText.textContent = `Manual mode uses the current Auto action (${selectedAutoMode}). Choose Select or Highlight to begin.`;
       return;
     }
-    manualHelperText.textContent = `Manual ${selectedManualMode} mode active. Applying selections will use ${selectedAutoMode}.`;
+    manualHelperText.textContent = selectedManualMode === "select" ? "Select text in preview to open Hide/Replace popup, then click Apply Selection." : `Manual highlight mode active. Applying selections will use ${selectedAutoMode}.`;
   }
   function downloadSanitizedFile() {
     if (!sanitizedContent && !sanitizedBlob) {

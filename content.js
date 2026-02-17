@@ -243,16 +243,13 @@ class PrivacyShield {
         </div>
       `;
       
-      // Create wrench as separate element (not child of shield)
+      // Create soap icon as separate element (not child of shield)
       const wrench = document.createElement('div');
       wrench.id = 'shield-wrench-btn';
       wrench.className = 'shield-wrench';
-      wrench.title = 'Open File Sanitizer';
-      wrench.innerHTML = `
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-          <path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z" fill="currentColor"/>
-        </svg>
-      `;
+      wrench.title = 'Open Sani File Sanitizer';
+      const soapIconUrl = chrome.runtime.getURL('sani_icon.png');
+      wrench.innerHTML = `<img src="${soapIconUrl}" alt="Sani" width="14" height="14" style="object-fit:contain; display:block;">`;
       
       document.body.appendChild(shield);
       document.body.appendChild(wrench);
@@ -517,7 +514,7 @@ class PrivacyShield {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="white" stroke="white" stroke-width="2"/>
           </svg>
-          PII Detections
+          Sani — PII Detections
         </h3>
         <button class="clear-all">Clear All</button>
       </div>
@@ -535,7 +532,7 @@ class PrivacyShield {
             <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="white" stroke="white" stroke-width="2"/>
             <path d="M9 12l2 2 4-4" stroke="#059669" stroke-width="2" stroke-linecap="round"/>
           </svg>
-          AI Input Sanitizer
+          Sani
         </h3>
       </div>
       <div class="panel-content no-detections">

@@ -60,15 +60,16 @@
       border-bottom: 1px solid var(--color-border);
     }
 
-    .shield-icon {
-      width: 44px;
-      height: 44px;
-      margin: 0 auto 12px;
-      background: var(--color-accent-subtle);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    .header-logo-icon {
+      display: block;
+      margin: 0 auto 8px;
+      object-fit: contain;
+    }
+
+    .header-logo-text {
+      display: block;
+      margin: 0 auto 4px;
+      object-fit: contain;
     }
 
     h1 {
@@ -291,6 +292,93 @@
     }
     .stats-breakdown li { margin: 3px 0; }
 
+    /* Quick Actions */
+    .quick-actions {
+      background: var(--color-surface-raised);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 12px;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-sm);
+    }
+    .quick-actions h3 {
+      margin: 0 0 12px 0;
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .quick-actions h3 svg {
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 5px;
+      color: var(--color-text-tertiary);
+    }
+    .action-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .action-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-surface);
+      color: var(--color-text-primary);
+      cursor: pointer;
+      font-family: var(--font-body);
+      font-size: 13px;
+      font-weight: 500;
+      transition: var(--transition-fast);
+      text-align: left;
+    }
+    .action-btn:hover {
+      border-color: var(--color-accent);
+      background: var(--color-accent-subtle);
+    }
+    .action-btn:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+    .action-btn .action-icon {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-sm);
+      background: var(--color-accent-subtle);
+      color: var(--color-accent);
+      flex-shrink: 0;
+    }
+    .action-btn .action-label {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .action-btn .action-label small {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--color-text-tertiary);
+    }
+    .action-btn.danger {
+      color: var(--color-text-secondary);
+    }
+    .action-btn.danger .action-icon {
+      background: var(--color-danger-bg);
+      color: var(--color-danger);
+    }
+    .action-btn.danger:hover {
+      border-color: var(--color-danger);
+      background: var(--color-danger-bg);
+    }
+
     /* Monitored Link */
     .monitored-link {
       display: block;
@@ -396,13 +484,8 @@
 <body>
   <div class="container">
     <header class="header">
-      <div class="shield-icon" role="img" aria-label="Privacy shield">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-          <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="var(--color-accent)" stroke="var(--color-accent)" stroke-width="1.5"/>
-          <path d="M9 12l2 2 4-4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <h1>AI Input Sanitizer</h1>
+      <img src="sani_icon.png" alt="Sani" class="header-logo-icon" width="44" height="44">
+      <img src="sani_text.png" alt="Sani" class="header-logo-text" height="28">
       <div class="subtitle">Detect PII in AI inputs</div>
     </header>
 
@@ -461,6 +544,38 @@
       </div>
 
       <div class="latest-detection" id="latestDetection" style="display: none;"></div>
+
+      <div class="quick-actions">
+        <h3>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M13 10V3L4 14h7v7l9-11h-7z" fill="currentColor" opacity="0.7"/>
+          </svg>
+          Quick Actions
+        </h3>
+        <div class="action-grid">
+          <button type="button" class="action-btn" id="openSanitizerBtn">
+            <span class="action-icon">
+              <img src="sani_icon.png" alt="" width="16" height="16" style="object-fit:contain">
+            </span>
+            <span class="action-label">
+              Open File Sanitizer
+              <small>Upload and clean files</small>
+            </span>
+          </button>
+          <button type="button" class="action-btn danger" id="clearSessionBtn">
+            <span class="action-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <polyline points="3 6 5 6 21 6" stroke="currentColor" stroke-width="2" fill="none"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" fill="none"/>
+              </svg>
+            </span>
+            <span class="action-label">
+              Clear Session Data
+              <small>Reset current page detections</small>
+            </span>
+          </button>
+        </div>
+      </div>
     </main>
 
     <nav>

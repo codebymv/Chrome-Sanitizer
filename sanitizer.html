@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>File Sanitizer — AI Input Sanitizer</title>
+  <title>File Sanitizer — Sani</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -293,6 +293,48 @@
 
     .manual-hit:hover {
       background: var(--color-accent-tint);
+    }
+
+    .manual-selection-popup {
+      position: fixed;
+      z-index: 2000;
+      display: none;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-surface-raised);
+      box-shadow: var(--shadow-md);
+    }
+
+    .manual-selection-popup.visible {
+      display: flex;
+    }
+
+    .manual-popup-btn {
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text-primary);
+      border-radius: var(--radius-sm);
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body);
+      transition: all var(--transition-fast);
+    }
+
+    .manual-popup-btn:hover {
+      border-color: var(--color-accent);
+      background: var(--color-accent-subtle);
+    }
+
+    .manual-popup-btn.hide {
+      color: var(--color-text-primary);
+    }
+
+    .manual-popup-btn.replace {
+      color: var(--color-accent-hover);
     }
 
     /* ─── Preview ────────────────────────────────────────── */
@@ -739,6 +781,11 @@
         <button class="download-button" id="downloadBtn" disabled>Download Sanitized File</button>
       </div>
     </div>
+  </div>
+
+  <div class="manual-selection-popup" id="manualSelectionPopup" role="dialog" aria-label="Selection actions">
+    <button type="button" class="manual-popup-btn hide" id="manualPopupHideBtn">Hide</button>
+    <button type="button" class="manual-popup-btn replace" id="manualPopupReplaceBtn">Replace</button>
   </div>
 
   <script src="sanitizer.js"></script>

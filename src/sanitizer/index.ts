@@ -43,6 +43,9 @@ const preModeHelp = mustGet<HTMLElement>('preModeHelp');
 const manualHelperText = mustGet<HTMLElement>('manualHelperText');
 const manualSummary = mustGet<HTMLElement>('manualSummary');
 const manualList = mustGet<HTMLElement>('manualList');
+const manualSelectionPopup = mustGet<HTMLElement>('manualSelectionPopup');
+const manualPopupHideBtn = mustGet<HTMLButtonElement>('manualPopupHideBtn');
+const manualPopupReplaceBtn = mustGet<HTMLButtonElement>('manualPopupReplaceBtn');
 
 const autoModeRadios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="autoMode"]'));
 const manualModeRadios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="manualMode"]'));
@@ -61,6 +64,7 @@ let syncingScroll = false;
 let selectedManualMode: ManualMode = '';
 let manualSelection = new Map<string, ManualCandidate>();
 let manualCandidates: ManualCandidate[] = [];
+let pendingPopupCandidateIds: string[] = [];
 
 uploadZone.addEventListener('click', () => {
   fileInput.click();
@@ -188,6 +192,40 @@ originalPreview.addEventListener('click', (event) => {
 
   const isChecked = !manualSelection.has(id);
   toggleManualSelection(id, isChecked);
+});
+
+originalPreview.addEventListener('mouseup', () => {
+  if (selectedManualMode !== 'select') {
+    hideManualSelectionPopup();
+    return;
+  }
+
+  if (fileType === 'csv') {
+    hideManualSelectionPopup();
+    return;
+  }
+
+  maybeOpenManualSelectionPopup();
+});
+
+document.addEventListener('scroll', () => {
+  hideManualSelectionPopup();
+}, true);
+
+document.addEventListener('mousedown', (event) => {
+  const target = event.target as HTMLElement;
+  if (manualSelectionPopup.contains(target)) {
+    return;
+  }
+  hideManualSelectionPopup();
+});
+
+manualPopupHideBtn.addEventListener('click', () => {
+  applyPopupSelection('hide');
+});
+
+manualPopupReplaceBtn.addEventListener('click', () => {
+  applyPopupSelection('replace');
 });
 
 autoCleanBtn.addEventListener('click', () => {
@@ -325,6 +363,8 @@ function clearEverything(): void {
   selectedManualMode = '';
   manualSelection = new Map<string, ManualCandidate>();
   manualCandidates = [];
+  pendingPopupCandidateIds = [];
+  hideManualSelectionPopup();
 
   autoModeRadios.forEach((radio) => {
     radio.disabled = false;
@@ -364,6 +404,8 @@ function resetControlStateForNewFile(): void {
   selectedManualMode = '';
   manualSelection = new Map<string, ManualCandidate>();
   manualCandidates = [];
+  pendingPopupCandidateIds = [];
+  hideManualSelectionPopup();
   autoCleanBtn.disabled = true;
   manualCleanBtn.disabled = true;
   downloadBtn.disabled = true;
@@ -447,7 +489,7 @@ async function displayDecodedFile(file: File): Promise<void> {
         radio.disabled = false;
       });
       updateManualReviewUi();
-      updateManualHelperText('Manual mode for DOCX uses the review list. Inline highlight is not shown in document preview.');
+      updateManualHelperText('Manual mode for DOCX switches to a selectable text preview with inline highlights.');
     } else {
       originalPreview.classList.remove('docx-layout');
       originalPreview.innerHTML = decoded.previewHtml;
@@ -671,6 +713,71 @@ function sanitizeBySelectedMatches(inputText: string, mode: AutoMode, matches: D
     replacements: orderedMatches.length,
     unchangedMatches
   };
+}
+
+function maybeOpenManualSelectionPopup(): void {
+  if (!selectedManualMode || selectedManualMode !== 'select' || manualCandidates.length === 0) {
+    hideManualSelectionPopup();
+    return;
+  }
+
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    hideManualSelectionPopup();
+    return;
+  }
+
+  const range = selection.getRangeAt(0);
+  if (!originalPreview.contains(range.commonAncestorContainer)) {
+    hideManualSelectionPopup();
+    return;
+  }
+
+  const previewRoot = originalPreview.querySelector('pre') ?? originalPreview;
+  const prefixRange = document.createRange();
+  prefixRange.selectNodeContents(previewRoot);
+  prefixRange.setEnd(range.startContainer, range.startOffset);
+
+  const selectedText = selection.toString();
+  const start = prefixRange.toString().length;
+  const end = start + selectedText.length;
+
+  const overlapping = manualCandidates
+    .filter((candidate) => candidate.match.index < end && (candidate.match.index + candidate.match.length) > start)
+    .map((candidate) => candidate.id);
+
+  if (overlapping.length === 0) {
+    hideManualSelectionPopup();
+    return;
+  }
+
+  pendingPopupCandidateIds = overlapping;
+  const rect = range.getBoundingClientRect();
+  const popupWidth = 152;
+  const left = Math.max(8, Math.min(window.innerWidth - popupWidth - 8, rect.left + (rect.width / 2) - (popupWidth / 2)));
+  const top = Math.max(8, rect.top - 42);
+
+  manualSelectionPopup.style.left = `${left}px`;
+  manualSelectionPopup.style.top = `${top}px`;
+  manualSelectionPopup.classList.add('visible');
+}
+
+function hideManualSelectionPopup(): void {
+  manualSelectionPopup.classList.remove('visible');
+  pendingPopupCandidateIds = [];
+}
+
+function applyPopupSelection(mode: AutoMode): void {
+  if (pendingPopupCandidateIds.length === 0) {
+    hideManualSelectionPopup();
+    return;
+  }
+
+  applySelectedMode(mode, true);
+  pendingPopupCandidateIds.forEach((id) => toggleManualSelection(id, true));
+  hideManualSelectionPopup();
+  window.getSelection()?.removeAllRanges();
+  setStatus(`Selected instance(s) queued for manual ${mode}. Click Apply Selection to sanitize.`, 'success');
 }
 
 async function sanitizeDocxPreservingFormat(file: File, mode: AutoMode, selectedOccurrences?: Map<string, Set<number>>): Promise<{
@@ -1000,7 +1107,7 @@ function shortValue(value: string): string {
 }
 
 function renderManualPreview(): void {
-  if (!currentFileContent || !selectedManualMode || fileType === 'docx') {
+  if (!currentFileContent || !selectedManualMode) {
     return;
   }
 
@@ -1049,6 +1156,7 @@ function applyManualMode(mode: ManualMode): void {
 
   updateManualReviewUi();
   renderManualPreview();
+  hideManualSelectionPopup();
   updateManualHelperText();
   setStatus(`Manual ${mode} mode is active. Toggle highlighted values, then click Apply Selection.`, 'success');
 }
@@ -1096,7 +1204,9 @@ function updateManualHelperText(message?: string): void {
   }
 
   if (fileType === 'docx') {
-    manualHelperText.textContent = 'Manual mode for DOCX works from the review list and applies selected items while preserving format.';
+    manualHelperText.textContent = selectedManualMode === 'select'
+      ? 'Select text in preview to open Hide/Replace popup, then click Apply Selection.'
+      : 'Highlight mode marks detected instances in preview. Deselect any you want to keep, then apply.';
     return;
   }
 
@@ -1105,7 +1215,9 @@ function updateManualHelperText(message?: string): void {
     return;
   }
 
-  manualHelperText.textContent = `Manual ${selectedManualMode} mode active. Applying selections will use ${selectedAutoMode}.`;
+  manualHelperText.textContent = selectedManualMode === 'select'
+    ? 'Select text in preview to open Hide/Replace popup, then click Apply Selection.'
+    : `Manual highlight mode active. Applying selections will use ${selectedAutoMode}.`;
 }
 
 function generateFakeData(original: string, type: string): string {

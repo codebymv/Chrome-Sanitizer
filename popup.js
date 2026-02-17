@@ -61,6 +61,9 @@
     const result = await chrome.storage.local.get(["historyStats"]);
     return asHistoryStats(result.historyStats);
   }
+  async function setSessionStats(stats) {
+    await chrome.storage.local.set({ sessionStats: stats });
+  }
   async function getLatestDetection() {
     const result = await chrome.storage.local.get(["latestDetection"]);
     return asLatestDetection(result.latestDetection);
@@ -188,10 +191,27 @@
     if (latestDetection) {
       renderLatestDetection(latestDetectionDiv, latestDetection.detected, latestDetection.timestamp);
     }
+    const openSanitizerBtn = mustGet("openSanitizerBtn");
+    const clearSessionBtn = mustGet("clearSessionBtn");
     enableToggle.addEventListener("change", async () => {
       const nextEnabled = enableToggle.checked;
       await setShieldEnabled(nextEnabled);
       updateStatus(status, nextEnabled);
+    });
+    openSanitizerBtn.addEventListener("click", () => {
+      const sanitizerUrl = chrome.runtime.getURL("sanitizer.html");
+      void chrome.tabs.create({ url: sanitizerUrl });
+    });
+    clearSessionBtn.addEventListener("click", async () => {
+      await setSessionStats(defaultSessionStats);
+      redactedCount.textContent = "0";
+      protectedTypes.textContent = "0 types";
+      latestDetectionDiv.style.display = "none";
+      latestDetectionDiv.innerHTML = "";
+      const breakdown = document.querySelector(".stats-breakdown");
+      if (breakdown) {
+        breakdown.remove();
+      }
     });
     monitoredLink.addEventListener("click", (event) => {
       event.preventDefault();

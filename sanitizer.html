@@ -117,8 +117,8 @@
     /* ─── Main Container ─────────────────────────────────── */
     .main-container {
       display: none;
-      padding: 28px;
-      max-width: 1400px;
+      padding: 16px;
+      max-width: 100%;
       margin: 0 auto;
     }
 
@@ -128,7 +128,7 @@
     .controls-panel {
       display: flex;
       gap: 16px;
-      margin-bottom: 24px;
+      margin-bottom: 12px;
     }
 
     .control-field {
@@ -153,6 +153,18 @@
     }
 
     .field-options { margin-bottom: 16px; }
+
+    .option-body {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .option-help {
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      line-height: 1.4;
+    }
 
     .radio-option {
       display: flex;
@@ -214,7 +226,7 @@
     .preview-container {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 16px;
+      gap: 12px;
     }
 
     .preview-section {
@@ -283,7 +295,8 @@
 
     .preview-content {
       position: relative;
-      max-height: 600px;
+      min-height: 520px;
+      max-height: calc(100vh - 280px);
       overflow: auto;
       background: var(--color-surface-sunken);
       border-radius: var(--radius-sm);
@@ -400,6 +413,91 @@
       outline-offset: 2px;
     }
 
+    .status-banner {
+      display: none;
+      margin-bottom: 12px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--color-border);
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.5;
+      background: var(--color-surface-raised);
+      color: var(--color-text-secondary);
+    }
+
+    .status-banner.visible {
+      display: block;
+    }
+
+    .status-banner.success {
+      background: var(--color-success-bg);
+      border-color: rgba(5, 150, 105, 0.2);
+      color: var(--color-success);
+    }
+
+    .status-banner.warning {
+      background: var(--color-severity-high-bg);
+      border-color: rgba(217, 119, 6, 0.2);
+      color: var(--color-severity-high);
+    }
+
+    .status-banner.error {
+      background: var(--color-danger-bg);
+      border-color: rgba(220, 38, 38, 0.2);
+      color: var(--color-danger);
+    }
+
+    .upload-mode {
+      width: 100%;
+      max-width: 420px;
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    .upload-mode-title {
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .upload-mode-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .upload-mode-btn {
+      flex: 1;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-surface-raised);
+      color: var(--color-text-secondary);
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      font-family: var(--font-body);
+    }
+
+    .upload-mode-btn.active {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+      background: var(--color-accent-subtle);
+    }
+
+    .upload-mode-help {
+      text-align: center;
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      line-height: 1.5;
+    }
+
     /* ─── Severity Badges ────────────────────────────────── */
     .severity-badge {
       display: inline-block;
@@ -441,25 +539,40 @@
       </div>
       <h2>File Sanitizer</h2>
       <p>Upload files to detect and remove PII &middot; Max 10 MB</p>
+      <div class="upload-mode">
+        <div class="upload-mode-title">Default Mode</div>
+        <div class="upload-mode-row">
+          <button type="button" class="upload-mode-btn" id="preModeHide" data-mode="hide">Hide</button>
+          <button type="button" class="upload-mode-btn" id="preModeReplace" data-mode="replace">Replace</button>
+        </div>
+        <div class="upload-mode-help" id="preModeHelp">Hide masks sensitive values with blocks. Applied automatically after upload.</div>
+      </div>
     </div>
     <input type="file" id="fileInput" class="file-input" aria-label="Select file to sanitize">
   </div>
 
   <div class="main-container" id="mainContainer">
+    <div class="status-banner" id="statusBanner" role="status" aria-live="polite"></div>
     <div class="controls-panel">
       <div class="control-field">
         <div class="field-header">Auto</div>
         <div class="field-options">
           <div class="radio-option">
             <input type="radio" id="autoHide" name="autoMode" value="hide">
-            <label for="autoHide">Hide</label>
+            <div class="option-body">
+              <label for="autoHide">Hide</label>
+              <div class="option-help">Masks sensitive values with blocks to remove readable content.</div>
+            </div>
           </div>
           <div class="radio-option">
             <input type="radio" id="autoReplace" name="autoMode" value="replace">
-            <label for="autoReplace">Replace</label>
+            <div class="option-body">
+              <label for="autoReplace">Replace</label>
+              <div class="option-help">Swaps sensitive values with realistic synthetic placeholders.</div>
+            </div>
           </div>
         </div>
-        <button class="clean-button" id="autoCleanBtn" disabled>Clean</button>
+        <button class="clean-button" id="autoCleanBtn" disabled>Re-run</button>
       </div>
 
       <div class="control-field">
@@ -467,11 +580,17 @@
         <div class="field-options">
           <div class="radio-option">
             <input type="radio" id="manualSelect" name="manualMode" value="select">
-            <label for="manualSelect">Select</label>
+            <div class="option-body">
+              <label for="manualSelect">Select</label>
+              <div class="option-help">Coming soon.</div>
+            </div>
           </div>
           <div class="radio-option">
             <input type="radio" id="manualHighlight" name="manualMode" value="highlight">
-            <label for="manualHighlight">Highlight</label>
+            <div class="option-body">
+              <label for="manualHighlight">Highlight</label>
+              <div class="option-help">Coming soon.</div>
+            </div>
           </div>
         </div>
         <button class="clean-button" id="manualCleanBtn" disabled>Clean</button>

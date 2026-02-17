@@ -10,6 +10,9 @@ import { renderAsync } from 'docx-preview';
 
 type FileKind = 'text' | 'csv' | 'docx' | 'pdf' | 'image' | '';
 type AutoMode = 'hide' | 'replace';
+type StatusTone = 'success' | 'warning' | 'error';
+
+const MODE_STORAGE_KEY = 'preferredAutoMode';
 
 const uploadZone = mustGet<HTMLElement>('uploadZone');
 const fileInput = mustGet<HTMLInputElement>('fileInput');
@@ -21,6 +24,10 @@ const resetSelectionsBtn = mustGet<HTMLButtonElement>('resetSelectionsBtn');
 const clearFileBtn = mustGet<HTMLButtonElement>('clearFileBtn');
 const autoCleanBtn = mustGet<HTMLButtonElement>('autoCleanBtn');
 const manualCleanBtn = mustGet<HTMLButtonElement>('manualCleanBtn');
+const statusBanner = mustGet<HTMLElement>('statusBanner');
+const preModeHide = mustGet<HTMLButtonElement>('preModeHide');
+const preModeReplace = mustGet<HTMLButtonElement>('preModeReplace');
+const preModeHelp = mustGet<HTMLElement>('preModeHelp');
 
 const autoModeRadios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="autoMode"]'));
 const manualModeRadios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="manualMode"]'));
@@ -31,9 +38,10 @@ let currentFileName = '';
 let sanitizedContent: string | null = null;
 let detectedPII: DetectedMatch[] = [];
 let fileType: FileKind = '';
-let lastAutoSelected: HTMLInputElement | null = null;
 let currentDecodedFile: DecodedFile | null = null;
 let sanitizedBlob: Blob | null = null;
+let selectedAutoMode: AutoMode = 'hide';
+let syncingScroll = false;
 
 uploadZone.addEventListener('click', () => {
   fileInput.click();
@@ -66,11 +74,8 @@ fileInput.addEventListener('change', (event) => {
 });
 
 resetSelectionsBtn.addEventListener('click', () => {
-  autoModeRadios.forEach((radio) => {
-    radio.checked = false;
-  });
-  autoCleanBtn.disabled = true;
-  lastAutoSelected = null;
+  applySelectedMode(selectedAutoMode, true);
+  clearStatus();
 });
 
 clearFileBtn.addEventListener('click', () => {
@@ -80,47 +85,57 @@ clearFileBtn.addEventListener('click', () => {
 });
 
 autoModeRadios.forEach((radio) => {
-  radio.addEventListener('click', (event) => {
+  radio.addEventListener('change', (event) => {
     const target = event.target as HTMLInputElement;
-
-    if (lastAutoSelected === target && target.checked) {
-      target.checked = false;
-      lastAutoSelected = null;
-      autoCleanBtn.disabled = true;
+    if (!target.checked) {
       return;
     }
 
-    lastAutoSelected = target;
-    autoCleanBtn.disabled = false;
+    applySelectedMode(target.value as AutoMode, true);
+
+    if (currentFileContent && currentDecodedFile?.canSanitizePreservingFormat) {
+      void performAutoClean(selectedAutoMode, false);
+    }
   });
+});
+
+preModeHide.addEventListener('click', (event) => {
+  event.stopPropagation();
+  applySelectedMode('hide', true);
+});
+
+preModeReplace.addEventListener('click', (event) => {
+  event.stopPropagation();
+  applySelectedMode('replace', true);
 });
 
 manualModeRadios.forEach((radio) => {
   radio.addEventListener('click', (event) => {
     const target = event.target as HTMLInputElement;
-    alert('Manual mode coming soon! Please use Auto mode for now.');
+    setStatus('Manual mode is coming soon. Auto mode remains active.', 'warning');
     target.checked = false;
   });
 });
 
 autoCleanBtn.addEventListener('click', () => {
-  const selectedMode = document.querySelector<HTMLInputElement>('input[name="autoMode"]:checked')?.value;
-
-  if (!selectedMode || !currentFileContent) {
-    alert('Please select Hide or Replace mode first.');
+  if (!currentFileContent) {
+    setStatus('Upload a supported file to sanitize first.', 'warning');
     return;
   }
 
-  void performAutoClean(selectedMode as AutoMode);
+  void performAutoClean(selectedAutoMode, false);
 });
 
 manualCleanBtn.addEventListener('click', () => {
-  alert('Manual mode coming soon!');
+  setStatus('Manual mode is coming soon. Auto mode remains active.', 'warning');
 });
 
 downloadBtn.addEventListener('click', () => {
   downloadSanitizedFile();
 });
+
+wirePreviewScrollSync();
+void initializeUiPreferences();
 
 function mustGet<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -128,6 +143,72 @@ function mustGet<T extends HTMLElement>(id: string): T {
     throw new Error(`Missing element: ${id}`);
   }
   return element as T;
+}
+
+async function initializeUiPreferences(): Promise<void> {
+  try {
+    const result = await chrome.storage.local.get([MODE_STORAGE_KEY]);
+    const stored = result[MODE_STORAGE_KEY];
+    if (stored === 'hide' || stored === 'replace') {
+      selectedAutoMode = stored;
+    }
+  } catch (error) {
+    console.warn('Could not load preferred mode from storage:', error);
+  }
+
+  applySelectedMode(selectedAutoMode, false);
+}
+
+function updatePreModeUi(mode: AutoMode): void {
+  preModeHide.classList.toggle('active', mode === 'hide');
+  preModeReplace.classList.toggle('active', mode === 'replace');
+  preModeHelp.textContent = mode === 'hide'
+    ? 'Hide masks sensitive values with blocks. Applied automatically after upload.'
+    : 'Replace swaps sensitive values with realistic placeholders. Applied automatically after upload.';
+}
+
+function applySelectedMode(mode: AutoMode, persist: boolean): void {
+  selectedAutoMode = mode;
+  autoModeRadios.forEach((radio) => {
+    radio.checked = radio.value === mode;
+  });
+  updatePreModeUi(mode);
+  autoCleanBtn.disabled = !currentFileContent;
+
+  if (persist) {
+    void chrome.storage.local.set({ [MODE_STORAGE_KEY]: mode });
+  }
+}
+
+function setStatus(message: string, tone: StatusTone): void {
+  statusBanner.textContent = message;
+  statusBanner.className = `status-banner visible ${tone}`;
+}
+
+function clearStatus(): void {
+  statusBanner.textContent = '';
+  statusBanner.className = 'status-banner';
+}
+
+function wirePreviewScrollSync(): void {
+  const sync = (source: HTMLElement, target: HTMLElement) => {
+    if (syncingScroll) {
+      return;
+    }
+
+    if (source.classList.contains('docx-layout') || target.classList.contains('docx-layout')) {
+      return;
+    }
+
+    syncingScroll = true;
+    target.scrollTop = source.scrollTop;
+    setTimeout(() => {
+      syncingScroll = false;
+    }, 0);
+  };
+
+  originalPreview.addEventListener('scroll', () => sync(originalPreview, sanitizedPreview));
+  sanitizedPreview.addEventListener('scroll', () => sync(sanitizedPreview, originalPreview));
 }
 
 function clearEverything(): void {
@@ -141,7 +222,6 @@ function clearEverything(): void {
   sanitizedBlob = null;
 
   autoModeRadios.forEach((radio) => {
-    radio.checked = false;
     radio.disabled = false;
   });
   manualModeRadios.forEach((radio) => {
@@ -152,7 +232,7 @@ function clearEverything(): void {
   autoCleanBtn.disabled = true;
   manualCleanBtn.disabled = true;
   downloadBtn.disabled = true;
-  lastAutoSelected = null;
+  applySelectedMode(selectedAutoMode, false);
 
   originalPreview.innerHTML = '';
   sanitizedPreview.innerHTML = '';
@@ -162,11 +242,11 @@ function clearEverything(): void {
   mainContainer.classList.remove('active');
   uploadZone.classList.remove('hidden');
   fileInput.value = '';
+  clearStatus();
 }
 
 function resetControlStateForNewFile(): void {
   autoModeRadios.forEach((radio) => {
-    radio.checked = false;
     radio.disabled = false;
   });
   manualModeRadios.forEach((radio) => {
@@ -177,14 +257,16 @@ function resetControlStateForNewFile(): void {
   autoCleanBtn.disabled = true;
   manualCleanBtn.disabled = true;
   downloadBtn.disabled = true;
-  lastAutoSelected = null;
+  applySelectedMode(selectedAutoMode, false);
   sanitizedContent = null;
   sanitizedBlob = null;
 }
 
 async function processFile(file: File): Promise<void> {
+  clearStatus();
+
   if (file.size > 10 * 1024 * 1024) {
-    alert('File too large. Maximum size is 10MB.');
+    setStatus('File too large. Maximum size is 10 MB.', 'error');
     return;
   }
 
@@ -195,6 +277,8 @@ async function processFile(file: File): Promise<void> {
 
   const extension = getExtension(file.name);
   const isImage = isImageFile(file, extension);
+
+  setStatus(`Loaded ${file.name}. Preparing preview...`, 'success');
 
   if (isImage) {
     fileType = 'image';
@@ -229,6 +313,7 @@ async function displayDecodedFile(file: File): Promise<void> {
       autoCleanBtn.disabled = true;
       manualCleanBtn.disabled = true;
       downloadBtn.disabled = true;
+      setStatus(decoded.unsupportedReason ?? 'Unsupported file format.', 'warning');
       showPreview();
       return;
     }
@@ -258,17 +343,20 @@ async function displayDecodedFile(file: File): Promise<void> {
       autoCleanBtn.disabled = true;
       manualCleanBtn.disabled = true;
       downloadBtn.disabled = true;
+      setStatus(decoded.unsupportedReason ?? 'Preserve-format sanitization is unavailable for this file type.', 'warning');
       showPreview();
       return;
     }
 
-  sanitizedPreview.classList.remove('docx-layout');
-    sanitizedPreview.innerHTML = '<pre>Choose Hide or Replace, then click Clean.</pre>';
+    sanitizedPreview.classList.remove('docx-layout');
+    sanitizedPreview.innerHTML = '<pre>Sanitizing automatically…</pre>';
+    autoCleanBtn.disabled = false;
 
     showPreview();
+    await performAutoClean(selectedAutoMode, true);
   } catch (error) {
     console.error('Error reading file:', error);
-    alert('Error reading file. Please try again.');
+    setStatus('Error reading file. Please try again.', 'error');
   }
 }
 
@@ -294,6 +382,8 @@ async function displayImage(file: File): Promise<void> {
   autoCleanBtn.disabled = true;
   manualCleanBtn.disabled = true;
   downloadBtn.disabled = true;
+
+  setStatus('Image preview loaded. Image sanitization is not available yet.', 'warning');
 
   showPreview();
 }
@@ -339,6 +429,39 @@ function containsResidualRisk(matches: DetectedMatch[]): boolean {
   ]);
 
   return matches.some((match) => blockedKeys.has(match.key));
+}
+
+function findUnchangedSensitiveValues(cleanedText: string, originalMatches: DetectedMatch[]): DetectedMatch[] {
+  const blockedKeys = new Set([
+    'ssn',
+    'creditCard',
+    'bankAccount',
+    'routingNumber',
+    'cvv',
+    'cardExpiry',
+    'fullNameContextual',
+    'email',
+    'phone',
+    'driversLicense',
+    'dob',
+    'streetAddress'
+  ]);
+
+  const unique = new Map<string, DetectedMatch>();
+  for (const match of originalMatches) {
+    if (!blockedKeys.has(match.key)) {
+      continue;
+    }
+    if (!match.value.trim()) {
+      continue;
+    }
+    const dedupeKey = `${match.key}|${match.value}`;
+    if (!unique.has(dedupeKey) && cleanedText.includes(match.value)) {
+      unique.set(dedupeKey, match);
+    }
+  }
+
+  return Array.from(unique.values());
 }
 
 function sanitizePlainText(inputText: string, mode: AutoMode): { cleanedText: string; replacements: number } {
@@ -468,38 +591,45 @@ async function renderDocxPreview(container: HTMLElement, source: Blob): Promise<
   });
 }
 
-async function performAutoClean(mode: AutoMode): Promise<void> {
+async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise<void> {
   if (!currentFileContent) {
-    alert('No file content available.');
+    setStatus('No file content available to sanitize.', 'warning');
     return;
   }
 
   if (fileType === 'image') {
-    alert('Image sanitization is not supported yet. Please upload text or CSV.');
+    setStatus('Image sanitization is not supported yet. Please upload text, CSV, or DOCX.', 'warning');
     return;
   }
 
   if (currentDecodedFile && !currentDecodedFile.canSanitizePreservingFormat) {
-    alert(currentDecodedFile.unsupportedReason ?? 'Preserve-format sanitization is not available for this file type yet.');
+    setStatus(currentDecodedFile.unsupportedReason ?? 'Preserve-format sanitization is not available for this file type yet.', 'warning');
     return;
   }
 
   if (fileType === 'docx') {
     if (!currentFile) {
-      alert('No file selected.');
+      setStatus('No file selected.', 'warning');
       return;
     }
 
     try {
+      const originalMatches = detectMatches(currentFileContent, PII_PATTERNS);
       const { blob, previewText, replacements } = await sanitizeDocxPreservingFormat(currentFile, mode);
       const residualMatches = detectMatches(previewText, PII_PATTERNS);
-      if (containsResidualRisk(residualMatches)) {
+      const unchangedOriginalValues = findUnchangedSensitiveValues(previewText, originalMatches);
+      const shouldBlock = mode === 'hide'
+        ? containsResidualRisk(residualMatches)
+        : unchangedOriginalValues.length > 0;
+
+      if (shouldBlock) {
         sanitizedBlob = null;
         sanitizedContent = previewText;
         downloadBtn.disabled = true;
         sanitizedPreview.classList.remove('docx-layout');
         sanitizedPreview.innerHTML = `<pre>${escapeHtml(previewText)}</pre>`;
-        alert(`Sanitization blocked: ${residualMatches.length} sensitive value(s) still detected after cleaning.`);
+        const issueCount = mode === 'hide' ? residualMatches.length : unchangedOriginalValues.length;
+        setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.`, 'error');
         return;
       }
 
@@ -509,14 +639,16 @@ async function performAutoClean(mode: AutoMode): Promise<void> {
       downloadBtn.disabled = false;
 
       if (replacements === 0) {
-        alert('ℹ️ No PII detected. Document appears clean.');
+        setStatus(autoTriggered ? 'No sensitive data detected. Document appears clean.' : 'No sensitive data detected. Document appears clean.', 'success');
       } else {
-        alert(`✓ Successfully cleaned ${replacements} PII instance(s) in DOCX!`);
+        setStatus(autoTriggered
+          ? `Auto-sanitized DOCX in ${mode} mode. Updated ${replacements} sensitive instance(s).`
+          : `Sanitized DOCX in ${mode} mode. Updated ${replacements} sensitive instance(s).`, 'success');
       }
       return;
     } catch (error) {
       console.error('DOCX sanitization failed:', error);
-      alert('Could not sanitize DOCX while preserving format. The file may be encrypted or malformed.');
+      setStatus('Could not sanitize DOCX while preserving format. The file may be encrypted or malformed.', 'error');
       return;
     }
   }
@@ -524,15 +656,22 @@ async function performAutoClean(mode: AutoMode): Promise<void> {
   sanitizedPreview.classList.remove('docx-layout');
 
   const inputText = currentFileContent;
+  const originalMatches = detectMatches(inputText, PII_PATTERNS);
   const { cleanedText, replacements } = sanitizePlainText(inputText, mode);
   const residualMatches = detectMatches(cleanedText, PII_PATTERNS);
+  const unchangedOriginalValues = findUnchangedSensitiveValues(cleanedText, originalMatches);
   sanitizedBlob = null;
 
-  if (containsResidualRisk(residualMatches)) {
+  const shouldBlock = mode === 'hide'
+    ? containsResidualRisk(residualMatches)
+    : unchangedOriginalValues.length > 0;
+
+  if (shouldBlock) {
     sanitizedContent = cleanedText;
     sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
     downloadBtn.disabled = true;
-    alert(`Sanitization blocked: ${residualMatches.length} sensitive value(s) still detected after cleaning.`);
+    const issueCount = mode === 'hide' ? residualMatches.length : unchangedOriginalValues.length;
+    setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.`, 'error');
     return;
   }
 
@@ -540,7 +679,7 @@ async function performAutoClean(mode: AutoMode): Promise<void> {
     sanitizedContent = inputText;
     sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(inputText) : `<pre>${escapeHtml(inputText)}</pre>`;
     downloadBtn.disabled = false;
-    alert('ℹ️ No PII detected. File appears clean!');
+    setStatus('No sensitive data detected. File appears clean.', 'success');
     return;
   }
 
@@ -548,7 +687,9 @@ async function performAutoClean(mode: AutoMode): Promise<void> {
   sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
   downloadBtn.disabled = false;
 
-  alert(`✓ Successfully cleaned ${replacements} PII instance(s)!`);
+  setStatus(autoTriggered
+    ? `Auto-sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).`
+    : `Sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).`, 'success');
 }
 
 function generateFakeData(original: string, type: string): string {
@@ -608,7 +749,7 @@ function randomInt(min: number, max: number): number {
 
 function downloadSanitizedFile(): void {
   if (!sanitizedContent && !sanitizedBlob) {
-    alert('No sanitized content to download.');
+    setStatus('No sanitized output is available to download yet.', 'warning');
     return;
   }
 

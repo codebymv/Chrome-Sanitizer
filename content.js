@@ -234,12 +234,10 @@ class PrivacyShield {
       const shield = document.createElement('div');
       shield.id = 'privacy-shield-persistent';
       shield.className = 'privacy-shield-persistent blue';
+      const shieldIconUrl = chrome.runtime.getURL('icon_shield_white.png');
       shield.innerHTML = `
         <div class="shield-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="currentColor" stroke="currentColor" stroke-width="2"/>
-            <path class="shield-check" d="M9 12l2 2 4-4" stroke="white" stroke-width="2" stroke-linecap="round"/>
-          </svg>
+          <img src="${shieldIconUrl}" alt="Shield" width="18" height="18" style="object-fit:contain; display:block;">
         </div>
       `;
       
@@ -248,8 +246,8 @@ class PrivacyShield {
       wrench.id = 'shield-wrench-btn';
       wrench.className = 'shield-wrench';
       wrench.title = 'Open Sani File Sanitizer';
-      const soapIconUrl = chrome.runtime.getURL('sani_icon.png');
-      wrench.innerHTML = `<img src="${soapIconUrl}" alt="Sani" width="14" height="14" style="object-fit:contain; display:block;">`;
+      const soapIconUrl = chrome.runtime.getURL('icon_soap_white.png');
+      wrench.innerHTML = `<img src="${soapIconUrl}" alt="Sani" width="16" height="16" style="object-fit:contain; display:block;">`;
       
       document.body.appendChild(shield);
       document.body.appendChild(wrench);

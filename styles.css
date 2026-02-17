@@ -50,7 +50,7 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--ps-surface);
+  background: var(--ps-accent);
   box-shadow: var(--ps-shadow-md);
   cursor: grab;
   z-index: var(--ps-z-badge);
@@ -58,7 +58,7 @@
   align-items: center;
   justify-content: center;
   transition: all 0.25s ease;
-  border: 2px solid;
+  border: none;
   user-select: none;
 }
 
@@ -68,23 +68,20 @@
 
 .privacy-shield-persistent:hover {
   transform: translateY(-50%) scale(1.12);
-  box-shadow: var(--ps-shadow-lg);
+  box-shadow: 0 3px 12px rgba(13, 148, 136, 0.4);
 }
 
 /* Shield state colours */
 .privacy-shield-persistent.blue {
-  border-color: var(--ps-accent);
-  color: var(--ps-accent);
+  background: var(--ps-accent);
 }
 
 .privacy-shield-persistent.green {
-  border-color: var(--ps-success);
-  color: var(--ps-success);
+  background: var(--ps-success);
 }
 
 .privacy-shield-persistent.red {
-  border-color: var(--ps-danger);
-  color: var(--ps-danger);
+  background: var(--ps-danger);
   animation: ps-pulse 2s infinite;
 }
 
@@ -103,15 +100,15 @@
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: var(--ps-surface);
-  border: 2px solid var(--ps-accent);
+  background: var(--ps-accent);
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer !important;
   transition: all var(--ps-transition);
   box-shadow: var(--ps-shadow-sm);
-  color: var(--ps-accent);
+  color: white;
   z-index: var(--ps-z-wrench);
   opacity: 1;
   pointer-events: auto !important;
@@ -120,9 +117,8 @@
 
 .shield-wrench:hover {
   transform: translate(-50%, -50%) scale(1.15);
-  background: var(--ps-accent);
-  color: white;
-  box-shadow: 0 3px 10px rgba(13, 148, 136, 0.35);
+  background: var(--ps-accent-hover);
+  box-shadow: 0 3px 10px rgba(13, 148, 136, 0.4);
 }
 
 .shield-wrench:active {

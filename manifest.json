@@ -35,7 +35,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["sanitizer.html", "sanitizer.js", "sani_icon.png", "sani_text.png"],
+      "resources": ["sanitizer.html", "sanitizer.js", "sani_icon.png", "sani_text.png", "icon_soap_white.png", "icon_shield_white.png"],
       "matches": ["<all_urls>"]
     }
   ]

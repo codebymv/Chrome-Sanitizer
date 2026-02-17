@@ -53620,6 +53620,17 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     }
     return Array.from(unique.values());
   }
+  function formatLeakDetails(matches) {
+    if (matches.length === 0) {
+      return "";
+    }
+    const first2 = matches[0];
+    if (!first2) {
+      return "";
+    }
+    const sample2 = first2.value.length > 48 ? `${first2.value.slice(0, 48)}\u2026` : first2.value;
+    return ` First unresolved field: ${first2.type} (${sample2}).`;
+  }
   function sanitizePlainText(inputText, mode) {
     const matches = detectMatches(inputText, PII_PATTERNS).sort((a, b) => b.index - a.index);
     if (matches.length === 0) {
@@ -53749,10 +53760,10 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
           sanitizedBlob = null;
           sanitizedContent = previewText;
           downloadBtn.disabled = true;
-          sanitizedPreview.classList.remove("docx-layout");
-          sanitizedPreview.innerHTML = `<pre>${escapeHtml(previewText)}</pre>`;
+          await renderDocxPreview(sanitizedPreview, blob);
           const issueCount = mode === "hide" ? residualMatches2.length : unchangedOriginalValues2.length;
-          setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.`, "error");
+          const leakDetails = mode === "replace" ? formatLeakDetails(unchangedOriginalValues2) : "";
+          setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.${leakDetails}`, "error");
           return;
         }
         sanitizedBlob = blob;

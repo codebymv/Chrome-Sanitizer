@@ -464,6 +464,19 @@ function findUnchangedSensitiveValues(cleanedText: string, originalMatches: Dete
   return Array.from(unique.values());
 }
 
+function formatLeakDetails(matches: DetectedMatch[]): string {
+  if (matches.length === 0) {
+    return '';
+  }
+
+  const first = matches[0];
+  if (!first) {
+    return '';
+  }
+  const sample = first.value.length > 48 ? `${first.value.slice(0, 48)}…` : first.value;
+  return ` First unresolved field: ${first.type} (${sample}).`;
+}
+
 function sanitizePlainText(inputText: string, mode: AutoMode): { cleanedText: string; replacements: number } {
   const matches = detectMatches(inputText, PII_PATTERNS).sort((a, b) => b.index - a.index);
 
@@ -626,10 +639,10 @@ async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise
         sanitizedBlob = null;
         sanitizedContent = previewText;
         downloadBtn.disabled = true;
-        sanitizedPreview.classList.remove('docx-layout');
-        sanitizedPreview.innerHTML = `<pre>${escapeHtml(previewText)}</pre>`;
+        await renderDocxPreview(sanitizedPreview, blob);
         const issueCount = mode === 'hide' ? residualMatches.length : unchangedOriginalValues.length;
-        setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.`, 'error');
+        const leakDetails = mode === 'replace' ? formatLeakDetails(unchangedOriginalValues) : '';
+        setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.${leakDetails}`, 'error');
         return;
       }
 

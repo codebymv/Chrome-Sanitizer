@@ -17,12 +17,12 @@ function mustGet<T extends HTMLElement>(id: string): T {
 
 function updateStatus(statusEl: HTMLElement, enabled: boolean): void {
   if (enabled) {
-    statusEl.textContent = '🛡️ Protection Active';
+    statusEl.innerHTML = '<span class="status-dot" aria-hidden="true"></span><span>Protection Active</span>';
     statusEl.className = 'status active';
     return;
   }
 
-  statusEl.textContent = '⚠️ Protection Disabled';
+  statusEl.innerHTML = '<span class="status-dot" aria-hidden="true"></span><span>Protection Disabled</span>';
   statusEl.className = 'status inactive';
 }
 

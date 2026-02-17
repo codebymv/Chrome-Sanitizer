@@ -533,14 +533,14 @@ class PrivacyShield {
         <h3>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="white" stroke="white" stroke-width="2"/>
-            <path d="M9 12l2 2 4-4" stroke="#10b981" stroke-width="2" stroke-linecap="round"/>
+            <path d="M9 12l2 2 4-4" stroke="#059669" stroke-width="2" stroke-linecap="round"/>
           </svg>
-          AI Input Sanitization
+          AI Input Sanitizer
         </h3>
       </div>
       <div class="panel-content no-detections">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
-          <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="#10b981" stroke="#10b981" stroke-width="2"/>
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="#059669" stroke="#059669" stroke-width="2"/>
           <path d="M9 12l2 2 4-4" stroke="white" stroke-width="2" stroke-linecap="round"/>
         </svg>
         <p>No Sensitive Information Detected</p>
@@ -876,7 +876,7 @@ class PrivacyShield {
       <div class="privacy-shield-alert-content" data-severity="${severity}">
         <div class="privacy-shield-alert-header">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="${severity === 'critical' ? '#ef4444' : '#f59e0b'}" stroke="${severity === 'critical' ? '#ef4444' : '#f59e0b'}" stroke-width="2"/>
+            <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="${severity === 'critical' ? '#DC2626' : '#D97706'}" stroke="${severity === 'critical' ? '#DC2626' : '#D97706'}" stroke-width="2"/>
             <text x="12" y="16" text-anchor="middle" fill="white" font-size="14" font-weight="bold">!</text>
           </svg>
           <h3>Personally Identifiable Information Detected</h3>

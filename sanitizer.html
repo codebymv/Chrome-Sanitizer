@@ -3,31 +3,62 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>File Sanitizer - AI Input Sanitization</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <title>File Sanitizer — AI Input Sanitizer</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    :root {
+      --color-surface: #FAFAF8;
+      --color-surface-raised: #FFFFFF;
+      --color-surface-sunken: #F2F1EE;
+      --color-border: #E8E6E1;
+      --color-border-subtle: #F0EEEA;
+      --color-text-primary: #1A1A1A;
+      --color-text-secondary: #6B6966;
+      --color-text-tertiary: #9C9A97;
+      --color-accent: #0D9488;
+      --color-accent-hover: #0F766E;
+      --color-accent-subtle: rgba(13, 148, 136, 0.08);
+      --color-accent-tint: rgba(13, 148, 136, 0.12);
+      --color-success: #059669;
+      --color-success-bg: #ECFDF5;
+      --color-danger: #DC2626;
+      --color-danger-bg: #FEF2F2;
+      --color-severity-critical: #DC2626;
+      --color-severity-critical-bg: #FEF2F2;
+      --color-severity-high: #D97706;
+      --color-severity-high-bg: #FFFBEB;
+      --color-severity-medium: #2563EB;
+      --color-severity-medium-bg: #EFF6FF;
+      --color-severity-low: #6B7280;
+      --color-severity-low-bg: #F9FAFB;
+      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'DM Mono', 'JetBrains Mono', ui-monospace, monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.04);
+      --transition-fast: 150ms cubic-bezier(0.16, 1, 0.3, 1);
     }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0f1419;
+      font-family: var(--font-body);
+      background: var(--color-surface);
       min-height: 100vh;
       overflow: auto;
-      color: #e8eaed;
+      color: var(--color-text-primary);
+      -webkit-font-smoothing: antialiased;
     }
 
+    /* ─── Upload Zone ────────────────────────────────────── */
     .upload-zone {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      border: 2px dashed #5f6368;
-      background: #1a1d23;
+      inset: 0;
+      background: var(--color-surface);
       cursor: pointer;
       transition: all 0.3s ease;
       display: flex;
@@ -37,52 +68,63 @@
       z-index: 1000;
     }
 
-    .upload-zone.dragover {
-      background: #242831;
-      border-color: #8ab4f8;
+    .upload-zone-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 48px 64px;
+      border: 2px dashed var(--color-border);
+      border-radius: var(--radius-lg);
+      transition: all 0.25s ease;
     }
 
-    .upload-zone.hidden {
-      display: none;
+    .upload-zone:hover .upload-zone-inner,
+    .upload-zone.dragover .upload-zone-inner {
+      border-color: var(--color-accent);
+      background: var(--color-accent-subtle);
     }
+
+    .upload-zone.hidden { display: none; }
 
     .upload-icon {
-      font-size: 64px;
-      margin-bottom: 24px;
+      width: 56px;
+      height: 56px;
+      background: var(--color-accent-subtle);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .upload-zone h2 {
-      font-size: 24px;
-      margin-bottom: 12px;
-      color: #e8eaed;
+      font-family: var(--font-display);
+      font-size: 20px;
       font-weight: 600;
-      letter-spacing: -0.5px;
+      color: var(--color-text-primary);
+      letter-spacing: -0.4px;
     }
 
     .upload-zone p {
-      color: #9aa0a6;
-      font-size: 14px;
+      color: var(--color-text-tertiary);
+      font-size: 13px;
       text-align: center;
-      max-width: 600px;
-      padding: 0 20px;
-      font-weight: 400;
+      max-width: 400px;
     }
 
-    .file-input {
-      display: none !important;
-    }
+    .file-input { display: none !important; }
 
+    /* ─── Main Container ─────────────────────────────────── */
     .main-container {
       display: none;
-      padding: 24px;
-      max-width: 1600px;
+      padding: 28px;
+      max-width: 1400px;
       margin: 0 auto;
     }
 
-    .main-container.active {
-      display: block;
-    }
+    .main-container.active { display: block; }
 
+    /* ─── Controls Panel ─────────────────────────────────── */
     .controls-panel {
       display: flex;
       gap: 16px;
@@ -91,80 +133,84 @@
 
     .control-field {
       flex: 1;
-      background: #1a1d23;
-      border-radius: 12px;
+      background: var(--color-surface-raised);
+      border-radius: var(--radius-md);
       padding: 20px;
-      border: 1px solid #2d3139;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-sm);
     }
 
     .field-header {
-      font-size: 16px;
+      font-family: var(--font-display);
+      font-size: 11px;
       font-weight: 600;
-      color: #e8eaed;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid #2d3139;
-      letter-spacing: -0.3px;
+      color: var(--color-text-tertiary);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--color-border);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
     }
 
-    .field-options {
-      margin-bottom: 16px;
-    }
+    .field-options { margin-bottom: 16px; }
 
     .radio-option {
       display: flex;
       align-items: center;
-      gap: 12px;
-      margin-bottom: 12px;
+      gap: 10px;
+      margin-bottom: 10px;
       cursor: pointer;
-      padding: 8px;
-      border-radius: 8px;
-      transition: all 0.2s;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      transition: all var(--transition-fast);
     }
 
-    .radio-option:hover {
-      background: rgba(138, 180, 248, 0.08);
-    }
+    .radio-option:hover { background: var(--color-accent-subtle); }
 
     .radio-option input[type="radio"] {
-      width: 18px;
-      height: 18px;
+      width: 16px;
+      height: 16px;
       cursor: pointer;
-      accent-color: #8ab4f8;
+      accent-color: var(--color-accent);
     }
 
     .radio-option label {
-      font-size: 14px;
-      color: #e8eaed;
+      font-size: 13px;
+      color: var(--color-text-primary);
       cursor: pointer;
       font-weight: 500;
     }
 
     .clean-button {
-      background: #8ab4f8;
-      color: #0f1419;
+      background: var(--color-accent);
+      color: white;
       border: none;
-      padding: 10px 24px;
-      border-radius: 8px;
-      font-size: 14px;
+      padding: 8px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
       font-weight: 600;
       cursor: pointer;
       float: right;
-      transition: all 0.2s;
-      font-family: 'Inter', sans-serif;
+      transition: all var(--transition-fast);
+      font-family: var(--font-body);
     }
 
     .clean-button:hover:not(:disabled) {
-      background: #aecbfa;
-      transform: translateY(-1px);
+      background: var(--color-accent-hover);
     }
 
     .clean-button:disabled {
-      background: #3c4043;
-      color: #5f6368;
+      background: var(--color-border);
+      color: var(--color-text-tertiary);
       cursor: not-allowed;
     }
 
+    .clean-button:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+
+    /* ─── Preview ────────────────────────────────────────── */
     .preview-container {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -172,107 +218,108 @@
     }
 
     .preview-section {
-      background: #1a1d23;
-      border-radius: 12px;
+      background: var(--color-surface-raised);
+      border-radius: var(--radius-md);
       padding: 20px;
-      border: 1px solid #2d3139;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-sm);
     }
 
     .preview-header {
-      font-size: 14px;
+      font-family: var(--font-display);
+      font-size: 11px;
       font-weight: 600;
-      color: #e8eaed;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid #2d3139;
+      color: var(--color-text-tertiary);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--color-border);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      letter-spacing: -0.3px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
     }
 
     .header-buttons {
       display: flex;
-      gap: 8px;
+      gap: 6px;
     }
 
     .icon-button {
       background: transparent;
-      border: 1px solid #2d3139;
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
+      border: 1px solid var(--color-border);
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-sm);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.2s;
-      color: #9aa0a6;
+      transition: all var(--transition-fast);
+      color: var(--color-text-tertiary);
     }
 
     .icon-button:hover {
-      background: rgba(138, 180, 248, 0.08);
-      border-color: #8ab4f8;
-      color: #8ab4f8;
+      background: var(--color-accent-subtle);
+      border-color: var(--color-accent);
+      color: var(--color-accent);
     }
 
     .icon-button.trash:hover {
-      background: rgba(244, 67, 54, 0.08);
-      border-color: #f44336;
-      color: #f44336;
+      background: var(--color-danger-bg);
+      border-color: var(--color-danger);
+      color: var(--color-danger);
+    }
+
+    .icon-button:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
     }
 
     .button-icon {
-      width: 18px;
-      height: 18px;
+      width: 16px;
+      height: 16px;
     }
 
     .preview-content {
       position: relative;
       max-height: 600px;
       overflow: auto;
-      background: #0f1419;
-      border-radius: 8px;
+      background: var(--color-surface-sunken);
+      border-radius: var(--radius-sm);
       padding: 16px;
-      border: 1px solid #2d3139;
+      border: 1px solid var(--color-border-subtle);
     }
 
-    .preview-content::-webkit-scrollbar {
-      width: 8px;
-    }
-
+    .preview-content::-webkit-scrollbar { width: 6px; }
     .preview-content::-webkit-scrollbar-track {
-      background: #1a1d23;
-      border-radius: 4px;
+      background: var(--color-surface-sunken);
+      border-radius: 3px;
     }
-
     .preview-content::-webkit-scrollbar-thumb {
-      background: #3c4043;
-      border-radius: 4px;
+      background: var(--color-border);
+      border-radius: 3px;
     }
-
     .preview-content::-webkit-scrollbar-thumb:hover {
-      background: #5f6368;
+      background: var(--color-text-tertiary);
     }
 
     .preview-content pre {
       white-space: pre-wrap;
       word-wrap: break-word;
-      font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
-      font-size: 13px;
-      line-height: 1.6;
-      color: #e8eaed;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--color-text-primary);
       margin: 0;
       user-select: text;
-      position: relative;
-      z-index: 1;
     }
 
     .preview-content img {
       max-width: 100%;
       height: auto;
       display: block;
-      border-radius: 8px;
+      border-radius: var(--radius-sm);
     }
 
     .preview-content table {
@@ -282,57 +329,98 @@
 
     .preview-content th,
     .preview-content td {
-      border: 1px solid #2d3139;
-      padding: 10px 12px;
+      border: 1px solid var(--color-border);
+      padding: 8px 12px;
       text-align: left;
-      font-size: 13px;
-    }
-
-    .preview-content th {
-      background: #1a1d23;
-      font-weight: 600;
-      color: #e8eaed;
       font-size: 12px;
     }
 
-    .preview-content td {
-      color: #e8eaed;
+    .preview-content th {
+      background: var(--color-surface-sunken);
+      font-weight: 600;
+      color: var(--color-text-primary);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
     }
 
+    .preview-content td { color: var(--color-text-secondary); }
+
+    /* ─── Download Button ────────────────────────────────── */
     .download-button {
-      background: #34a853;
+      background: var(--color-accent);
       color: white;
       border: none;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-size: 14px;
+      padding: 10px 24px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
       font-weight: 600;
       cursor: pointer;
-      margin-top: 16px;
-      transition: all 0.2s;
+      margin-top: 14px;
+      transition: all var(--transition-fast);
       display: block;
       width: 100%;
-      font-family: 'Inter', sans-serif;
+      font-family: var(--font-body);
     }
 
-    .download-button:hover {
-      background: #2d9249;
-      transform: translateY(-1px);
+    .download-button:hover:not(:disabled) {
+      background: var(--color-accent-hover);
     }
 
     .download-button:disabled {
-      background: #3c4043;
-      color: #5f6368;
+      background: var(--color-border);
+      color: var(--color-text-tertiary);
       cursor: not-allowed;
+    }
+
+    .download-button:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+
+    /* ─── Severity Badges ────────────────────────────────── */
+    .severity-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .severity-badge.severity-critical {
+      background: var(--color-severity-critical-bg);
+      color: var(--color-severity-critical);
+    }
+    .severity-badge.severity-high {
+      background: var(--color-severity-high-bg);
+      color: var(--color-severity-high);
+    }
+    .severity-badge.severity-medium {
+      background: var(--color-severity-medium-bg);
+      color: var(--color-severity-medium);
+    }
+    .severity-badge.severity-low {
+      background: var(--color-severity-low-bg);
+      color: var(--color-severity-low);
     }
   </style>
 </head>
 <body>
   <div class="upload-zone" id="uploadZone">
-    <div class="upload-icon">📄</div>
-    <h2>File Sanitizer</h2>
-    <p>Upload files to detect and remove PII • Max 10MB</p>
-    <input type="file" id="fileInput" class="file-input">
+    <div class="upload-zone-inner">
+      <div class="upload-icon" role="img" aria-label="Upload file">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="17 8 12 3 7 8" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="12" y1="3" x2="12" y2="15" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h2>File Sanitizer</h2>
+      <p>Upload files to detect and remove PII &middot; Max 10 MB</p>
+    </div>
+    <input type="file" id="fileInput" class="file-input" aria-label="Select file to sanitize">
   </div>
 
   <div class="main-container" id="mainContainer">
@@ -373,13 +461,13 @@
         <div class="preview-header">
           <span>Original</span>
           <div class="header-buttons">
-            <button class="icon-button reset" id="resetSelectionsBtn" title="Clear all selections">
+            <button class="icon-button reset" id="resetSelectionsBtn" title="Clear all selections" aria-label="Clear all selections">
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M1 4v6h6M23 20v-6h-6"/>
                 <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
               </svg>
             </button>
-            <button class="icon-button trash" id="clearFileBtn" title="Clear file and start over">
+            <button class="icon-button trash" id="clearFileBtn" title="Clear file and start over" aria-label="Clear file and start over">
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -395,7 +483,7 @@
       <div class="preview-section">
         <div class="preview-header">Sanitized</div>
         <div class="preview-content" id="sanitizedPreview"></div>
-        <button class="download-button" id="downloadBtn" disabled>Download</button>
+        <button class="download-button" id="downloadBtn" disabled>Download Sanitized File</button>
       </div>
     </div>
   </div>

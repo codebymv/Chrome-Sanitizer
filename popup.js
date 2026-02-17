@@ -76,11 +76,11 @@
   }
   function updateStatus(statusEl, enabled) {
     if (enabled) {
-      statusEl.textContent = "\u{1F6E1}\uFE0F Protection Active";
+      statusEl.innerHTML = '<span class="status-dot" aria-hidden="true"></span><span>Protection Active</span>';
       statusEl.className = "status active";
       return;
     }
-    statusEl.textContent = "\u26A0\uFE0F Protection Disabled";
+    statusEl.innerHTML = '<span class="status-dot" aria-hidden="true"></span><span>Protection Disabled</span>';
     statusEl.className = "status inactive";
   }
   function showStatsBreakdown(statsContainer, byType) {

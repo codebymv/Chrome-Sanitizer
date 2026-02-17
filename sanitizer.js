@@ -23892,7 +23892,7 @@
       key: "creditCard",
       label: "Financial",
       severity: "critical",
-      regex: /\b(?:\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}|\d{4}[\s-]?\d{6}[\s-]?\d{5})\b/g,
+      regex: /(?<=\bcredit\s*card\s*:\s*)(?:\d[\s-]?){13,19}\d\b|\b(?:\d[\s-]?){13,19}\d\b/g,
       validate: (match) => isLikelyCreditCard(match)
     },
     {
@@ -23936,7 +23936,7 @@
       key: "streetAddress",
       label: "Street Address",
       severity: "high",
-      regex: /\b(?:address\s*:\s*)?\d+\s+[A-Za-z0-9.'\-\s]+,\s*[A-Za-z.\-\s]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/gi
+      regex: /(?<=\baddress\s*:\s*)\d+\s+[A-Za-z0-9.'#\-\s]+,\s*(?:[A-Za-z0-9.'#\-\s]+,\s*)?[A-Za-z.\-\s]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/gi
     },
     {
       key: "zipCode",

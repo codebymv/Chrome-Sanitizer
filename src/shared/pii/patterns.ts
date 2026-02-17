@@ -12,13 +12,13 @@ export const PII_PATTERNS: DetectionPattern[] = [
     key: 'ssn',
     label: 'Financial',
     severity: 'critical',
-    regex: /\b(?:\d{3}-\d{2}-\d{4}|\d{9})\b/g
+    regex: /\b\d{3}-\d{2}-\d{4}\b|(?<=\b(?:social\s*security(?:\s*number)?|ssn)\s*:\s*)\d{9}\b/gi
   },
   {
     key: 'creditCard',
     label: 'Financial',
     severity: 'critical',
-    regex: /\b(?:\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}|\d{4}[\s-]?\d{6}[\s-]?\d{5})\b/g,
+    regex: /(?<=\bcredit\s*card\s*:\s*)(?:\d[\s-]?){13,19}\d\b|\b(?:\d[\s-]?){13,19}\d\b/g,
     validate: (match) => isLikelyCreditCard(match)
   },
   {
@@ -62,7 +62,7 @@ export const PII_PATTERNS: DetectionPattern[] = [
     key: 'streetAddress',
     label: 'Street Address',
     severity: 'high',
-    regex: /\b(?:address\s*:\s*)?\d+\s+[A-Za-z0-9.'\-\s]+,\s*[A-Za-z.\-\s]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/gi
+    regex: /(?<=\baddress\s*:\s*)\d+\s+[A-Za-z0-9.'#\-\s]+,\s*(?:[A-Za-z0-9.'#\-\s]+,\s*)?[A-Za-z.\-\s]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/gi
   },
   {
     key: 'zipCode',
@@ -74,13 +74,13 @@ export const PII_PATTERNS: DetectionPattern[] = [
     key: 'passport',
     label: 'Passport Number',
     severity: 'critical',
-    regex: /\b[A-Z]{1,2}\d{6,9}\b/g
+    regex: /(?<=\bpassport(?:\s*number)?\s*:\s*)[A-Z0-9]{6,9}\b/gi
   },
   {
     key: 'driversLicense',
     label: "Driver's License",
     severity: 'high',
-    regex: /\b[A-Z]{1,2}\d{5,8}\b/g
+    regex: /(?<=\b(?:driver'?s?\s*license|dl)\s*:\s*)[A-Z]{1,2}\d{5,8}\b/gi
   },
   {
     key: 'dob',

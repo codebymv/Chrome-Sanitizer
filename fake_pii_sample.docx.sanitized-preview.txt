@@ -1,0 +1,64 @@
+FAKE PII SAMPLE DOCUMENT (FOR TESTING ONLY)
+
+This document contains completely fictional personally identifiable information for development, testing, and demonstration purposes only.
+
+Fake Individual #1
+
+Full Name: █████████████████████████████ Birth: ██████████
+
+Social Security Number: ███████████
+
+Driver License: ████████ (AZ)
+
+Email: ██████████████████████████████
+
+Phone: ██████████████
+
+Address: ██████████████████████████████████████████████
+
+Bank Account Number: ████████████
+
+Routing Number: █████████
+
+Credit Card: ███████████████████ (Exp: █████, CVV: ███)
+
+Fake Individual #2
+
+Full Name: █████████████████████████████ Birth: ██████████
+
+Social Security Number: ███████████
+
+Driver License: ████████ (CA)
+
+Email: ███████████████████████████
+
+Phone: ██████████████
+
+Address: ████████████████████████████████████████
+
+Bank Account Number: ████████████
+
+Routing Number: █████████
+
+Credit Card: ███████████████████ (Exp: █████, CVV: ███)
+
+Fake Individual #3
+
+Full Name: ████████████████████████████ Birth: ██████████
+
+Social Security Number: ███████████
+
+Driver License: ████████ (TX)
+
+Email: █████████████████████████
+
+Phone: ██████████████
+
+Address: ███████████████████████████████████████████████
+
+Bank Account Number: ████████████
+
+Routing Number: █████████
+
+Credit Card: ██████████████████ (Exp: █████, CVV: ███)
+

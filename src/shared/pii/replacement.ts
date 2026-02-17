@@ -35,6 +35,18 @@ function randomLetter(random: RandomFn, uppercase: boolean): string {
   return String.fromCharCode(base + randomInt(random, 0, 25));
 }
 
+function pickFrom<T>(random: RandomFn, values: T[]): T {
+  if (values.length === 0) {
+    throw new Error('pickFrom requires a non-empty values array');
+  }
+  const index = randomInt(random, 0, values.length - 1);
+  const picked = values[index];
+  if (picked === undefined) {
+    return values[0] as T;
+  }
+  return picked;
+}
+
 function replaceByCharacterClass(template: string, random: RandomFn): string {
   let result = '';
   for (const char of template) {
@@ -163,22 +175,39 @@ function replacePhone(value: string, random: RandomFn): string {
 }
 
 function replaceEmail(value: string, random: RandomFn): string {
-  const replaced = replaceByCharacterClass(value, random)
-    .replace(/@/g, '@')
-    .replace(/\./g, '.');
-
   const atIndex = value.indexOf('@');
-  if (atIndex < 1) {
-    return replaced;
+  const dotIndex = value.lastIndexOf('.');
+  if (atIndex < 1 || dotIndex <= atIndex + 1) {
+    return replaceByCharacterClass(value, random);
   }
 
-  const chars = replaced.split('');
-  chars[atIndex] = '@';
-  const dotIndex = value.lastIndexOf('.');
-  if (dotIndex > atIndex) {
-    chars[dotIndex] = '.';
+  const localLength = atIndex;
+  const domainLength = dotIndex - atIndex - 1;
+  const tldLength = value.length - dotIndex - 1;
+
+  const localWords = ['anon', 'safe', 'mask', 'proxy', 'user', 'token'];
+  const domainWords = ['example', 'sandbox', 'placeholder', 'redacted', 'privacy'];
+  const tldWords = ['invalid', 'test', 'safe', 'mask'];
+
+  let local = pickFrom(random, localWords);
+  while (local.length < localLength) {
+    local += randomDigit(random);
   }
-  return chars.join('');
+  local = local.slice(0, localLength);
+
+  let domain = pickFrom(random, domainWords);
+  while (domain.length < domainLength) {
+    domain += randomLetter(random, false);
+  }
+  domain = domain.slice(0, domainLength);
+
+  let tld = pickFrom(random, tldWords);
+  while (tld.length < tldLength) {
+    tld += randomLetter(random, false);
+  }
+  tld = tld.slice(0, tldLength);
+
+  return `${local}@${domain}.${tld}`;
 }
 
 function replaceFinancialLike(value: string, random: RandomFn): string {
@@ -186,6 +215,9 @@ function replaceFinancialLike(value: string, random: RandomFn): string {
   let digits = '';
   for (let index = 0; index < digitsCount; index += 1) {
     digits += randomDigit(random);
+  }
+  if (digits.length > 0) {
+    digits = `9${digits.slice(1)}`;
   }
   digits = makeLuhnInvalid(digits);
   return fillDigitsTemplate(value, digits);
@@ -198,10 +230,20 @@ function replaceRouting(value: string, random: RandomFn): string {
     digits += randomDigit(random);
   }
   if (digitsCount === 9) {
-    const first = digits.slice(0, 8);
-    const check = Number(digits[8] ?? '0');
-    const invalidCheck = (check + 1) % 10;
-    digits = `${first}${invalidCheck}`;
+    const sum =
+      3 * Number(digits[0] ?? '0') +
+      7 * Number(digits[1] ?? '0') +
+      1 * Number(digits[2] ?? '0') +
+      3 * Number(digits[3] ?? '0') +
+      7 * Number(digits[4] ?? '0') +
+      1 * Number(digits[5] ?? '0') +
+      3 * Number(digits[6] ?? '0') +
+      7 * Number(digits[7] ?? '0') +
+      1 * Number(digits[8] ?? '0');
+    if (sum % 10 === 0) {
+      const last = Number(digits[8] ?? '0');
+      digits = `${digits.slice(0, 8)}${(last + 1) % 10}`;
+    }
   }
   return fillDigitsTemplate(value, digits);
 }
@@ -214,17 +256,22 @@ function replaceSsn(value: string, random: RandomFn): string {
 }
 
 function replaceName(value: string, random: RandomFn): string {
-  const vowels = ['a', 'e', 'i', 'o', 'u'];
-  const consonants = ['b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'n', 'p', 'r', 's', 't', 'v', 'w', 'y', 'z'];
+  const firstNames = ['Avery', 'Jordan', 'Taylor', 'Riley', 'Morgan', 'Quinn', 'Parker', 'Rowan', 'Casey', 'Elliot'];
+  const lastNames = ['Harwood', 'Bennett', 'Caldwell', 'Whitaker', 'Sullivan', 'Montrose', 'Hawthorne', 'Bradford', 'Langford', 'Ellison'];
 
-  const buildWord = (length: number, uppercaseFirst: boolean): string => {
-    let word = '';
-    for (let index = 0; index < length; index += 1) {
-      const source = index % 2 === 0 ? consonants : vowels;
-      const next = source[randomInt(random, 0, source.length - 1)] ?? 'x';
-      word += index === 0 && uppercaseFirst ? next.toUpperCase() : next;
+  const buildWord = (length: number, uppercaseFirst: boolean, pool: string[]): string => {
+    let candidate = pickFrom(random, pool);
+    while (candidate.length < length) {
+      candidate += pickFrom(random, pool).toLowerCase();
     }
-    return word;
+    candidate = candidate.slice(0, length);
+    if (length > 3) {
+      candidate = `${candidate.slice(0, length - 1)}x`;
+    }
+    if (uppercaseFirst) {
+      return `${candidate[0]?.toUpperCase() ?? 'X'}${candidate.slice(1).toLowerCase()}`;
+    }
+    return candidate.toLowerCase();
   };
 
   return value
@@ -234,12 +281,45 @@ function replaceName(value: string, random: RandomFn): string {
         return part;
       }
       if (part.length === 2 && part.endsWith('.')) {
-        return `${randomLetter(random, true)}.`;
+        return 'X.';
       }
       const uppercaseFirst = /[A-Z]/.test(part[0] ?? '');
-      return buildWord(part.length, uppercaseFirst);
+      const useFirstPool = random() > 0.5;
+      return buildWord(part.length, uppercaseFirst, useFirstPool ? firstNames : lastNames);
     })
     .join('');
+}
+
+function replaceStreetAddress(value: string, random: RandomFn): string {
+  const streetRoots = ['Maple', 'Willow', 'Cedar', 'Oak', 'Harbor', 'Pine', 'River', 'Summit', 'Lake', 'Elm'];
+  const streetSuffix = ['Street', 'Avenue', 'Road', 'Lane', 'Drive', 'Court', 'Boulevard'];
+  const cityNames = ['Springfield', 'Riverton', 'Fairview', 'Brookfield', 'Lakeside', 'Hillcrest', 'Woodland', 'Greendale'];
+
+  const number = String(randomInt(random, 100, 9899));
+  const street = `${pickFrom(random, streetRoots)} ${pickFrom(random, streetSuffix)}`;
+  const includeUnit = value.toLowerCase().includes('apt') || value.toLowerCase().includes('suite') || value.includes('#');
+  const unit = includeUnit ? `, Apt ${randomInt(random, 1, 999)}${randomLetter(random, true)}` : '';
+  const city = pickFrom(random, cityNames);
+  const state = 'ZZ';
+  const zip = `9${String(randomInt(random, 0, 9999)).padStart(4, '0')}`;
+
+  return `${number} ${street}${unit}, ${city}, ${state} ${zip}`;
+}
+
+function replaceDriversLicense(value: string): string {
+  let output = '';
+  for (const char of value) {
+    if (/\d/.test(char)) {
+      output += '0';
+      continue;
+    }
+    if (/[A-Za-z]/.test(char)) {
+      output += 'X';
+      continue;
+    }
+    output += char;
+  }
+  return output;
 }
 
 export function generateSafeReplacement(match: DetectedMatch): string {
@@ -276,6 +356,13 @@ export function generateSafeReplacement(match: DetectedMatch): string {
       break;
     case 'bankAccount':
       candidate = fillDigitsTemplate(match.value, `0000${'0'.repeat(Math.max(0, match.value.replace(/\D/g, '').length - 4))}`);
+      break;
+    case 'streetAddress':
+      candidate = replaceStreetAddress(match.value, random);
+      break;
+    case 'driversLicense':
+    case 'passport':
+      candidate = replaceDriversLicense(match.value);
       break;
     default:
       candidate = replaceByCharacterClass(match.value, random);

@@ -5,6 +5,8 @@ import { decodeUploadedFile } from '../shared/file/registry';
 import type { DecodedFile } from '../shared/file/types';
 import { getExtension, isImageFile, escapeHtml } from '../shared/file/utils';
 import Papa from 'papaparse';
+import JSZip from 'jszip';
+import { renderAsync } from 'docx-preview';
 
 type FileKind = 'text' | 'csv' | 'docx' | 'pdf' | 'image' | '';
 type AutoMode = 'hide' | 'replace';
@@ -31,6 +33,7 @@ let detectedPII: DetectedMatch[] = [];
 let fileType: FileKind = '';
 let lastAutoSelected: HTMLInputElement | null = null;
 let currentDecodedFile: DecodedFile | null = null;
+let sanitizedBlob: Blob | null = null;
 
 uploadZone.addEventListener('click', () => {
   fileInput.click();
@@ -108,7 +111,7 @@ autoCleanBtn.addEventListener('click', () => {
     return;
   }
 
-  performAutoClean(selectedMode as AutoMode);
+  void performAutoClean(selectedMode as AutoMode);
 });
 
 manualCleanBtn.addEventListener('click', () => {
@@ -135,6 +138,7 @@ function clearEverything(): void {
   detectedPII = [];
   fileType = '';
   currentDecodedFile = null;
+  sanitizedBlob = null;
 
   autoModeRadios.forEach((radio) => {
     radio.checked = false;
@@ -152,6 +156,8 @@ function clearEverything(): void {
 
   originalPreview.innerHTML = '';
   sanitizedPreview.innerHTML = '';
+  originalPreview.classList.remove('docx-layout');
+  sanitizedPreview.classList.remove('docx-layout');
 
   mainContainer.classList.remove('active');
   uploadZone.classList.remove('hidden');
@@ -173,6 +179,7 @@ function resetControlStateForNewFile(): void {
   downloadBtn.disabled = true;
   lastAutoSelected = null;
   sanitizedContent = null;
+  sanitizedBlob = null;
 }
 
 async function processFile(file: File): Promise<void> {
@@ -207,6 +214,8 @@ async function displayDecodedFile(file: File): Promise<void> {
       currentFileContent = null;
       detectedPII = [];
       fileType = '';
+      originalPreview.classList.remove('docx-layout');
+      sanitizedPreview.classList.remove('docx-layout');
       originalPreview.innerHTML = decoded.previewHtml;
       sanitizedPreview.innerHTML = `<pre>Cannot process this file type.\n${decoded.unsupportedReason ?? 'Unsupported file format.'}</pre>`;
       autoModeRadios.forEach((radio) => {
@@ -228,9 +237,15 @@ async function displayDecodedFile(file: File): Promise<void> {
     detectedPII = detectMatches(decoded.extractedText, PII_PATTERNS);
     fileType = decoded.kind;
 
-    originalPreview.innerHTML = decoded.previewHtml;
+    if (decoded.kind === 'docx') {
+      await renderDocxPreview(originalPreview, file);
+    } else {
+      originalPreview.classList.remove('docx-layout');
+      originalPreview.innerHTML = decoded.previewHtml;
+    }
 
     if (!decoded.canSanitizePreservingFormat) {
+      sanitizedPreview.classList.remove('docx-layout');
       sanitizedPreview.innerHTML = `<pre>${decoded.unsupportedReason ?? 'Preserve-format sanitization is not available for this file type yet.'}</pre>`;
       autoModeRadios.forEach((radio) => {
         radio.checked = false;
@@ -247,6 +262,7 @@ async function displayDecodedFile(file: File): Promise<void> {
       return;
     }
 
+  sanitizedPreview.classList.remove('docx-layout');
     sanitizedPreview.innerHTML = '<pre>Choose Hide or Replace, then click Clean.</pre>';
 
     showPreview();
@@ -259,6 +275,9 @@ async function displayDecodedFile(file: File): Promise<void> {
 async function displayImage(file: File): Promise<void> {
   const dataUrl = await readFileAsDataUrl(file);
   currentFileContent = dataUrl;
+
+  originalPreview.classList.remove('docx-layout');
+  sanitizedPreview.classList.remove('docx-layout');
 
   originalPreview.innerHTML = `<img src="${dataUrl}" alt="Original">`;
   sanitizedPreview.innerHTML = '<pre style="color: #f59e0b; text-align: center; padding: 40px;">Image sanitization is not supported yet.\nUpload text or CSV for cleaning.</pre>';
@@ -294,7 +313,114 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-function performAutoClean(mode: AutoMode): void {
+function sanitizePlainText(inputText: string, mode: AutoMode): { cleanedText: string; replacements: number } {
+  const matches = detectMatches(inputText, PII_PATTERNS).sort((a, b) => b.index - a.index);
+
+  if (matches.length === 0) {
+    return {
+      cleanedText: inputText,
+      replacements: 0
+    };
+  }
+
+  let cleanedText = inputText;
+  for (const pii of matches) {
+    const before = cleanedText.substring(0, pii.index);
+    const after = cleanedText.substring(pii.index + pii.length);
+    const replacement = mode === 'hide' ? '█'.repeat(pii.length) : generateFakeData(pii.value, pii.type);
+    cleanedText = before + replacement + after;
+  }
+
+  return {
+    cleanedText,
+    replacements: matches.length
+  };
+}
+
+async function sanitizeDocxPreservingFormat(file: File, mode: AutoMode): Promise<{
+  blob: Blob;
+  previewText: string;
+  replacements: number;
+}> {
+  const buffer = await file.arrayBuffer();
+  const zip = await JSZip.loadAsync(buffer);
+  const xmlTargets = Object.keys(zip.files).filter((path) =>
+    /^word\/(document|header\d+|footer\d+|footnotes|endnotes|comments)\.xml$/i.test(path)
+  );
+
+  let totalReplacements = 0;
+  const cleanedTextParts: string[] = [];
+  const parser = new DOMParser();
+  const serializer = new XMLSerializer();
+
+  for (const target of xmlTargets) {
+    const entry = zip.file(target);
+    if (!entry) {
+      continue;
+    }
+
+    const xml = await entry.async('string');
+    const doc = parser.parseFromString(xml, 'application/xml');
+
+    if (doc.getElementsByTagName('parsererror').length > 0) {
+      throw new Error(`Could not parse DOCX XML part: ${target}`);
+    }
+
+    const elements = Array.from(doc.getElementsByTagName('*'));
+    for (const element of elements) {
+      if (element.localName !== 't') {
+        continue;
+      }
+
+      const originalText = element.textContent ?? '';
+      if (!originalText.trim()) {
+        continue;
+      }
+
+      const { cleanedText, replacements } = sanitizePlainText(originalText, mode);
+      if (replacements > 0) {
+        element.textContent = cleanedText;
+        totalReplacements += replacements;
+      }
+      cleanedTextParts.push(cleanedText);
+    }
+
+    const updatedXml = serializer.serializeToString(doc);
+    zip.file(target, updatedXml);
+  }
+
+  const resultBlob = await zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  });
+
+  return {
+    blob: resultBlob,
+    previewText: cleanedTextParts.join('\n'),
+    replacements: totalReplacements
+  };
+}
+
+async function renderDocxPreview(container: HTMLElement, source: Blob): Promise<void> {
+  container.innerHTML = '';
+  container.classList.add('docx-layout');
+
+  const host = document.createElement('div');
+  host.className = 'docx-preview-host';
+  container.appendChild(host);
+
+  const data = await source.arrayBuffer();
+  await renderAsync(data, host, undefined, {
+    inWrapper: true,
+    renderHeaders: true,
+    renderFooters: true,
+    renderFootnotes: true,
+    renderEndnotes: true,
+    useBase64URL: true
+  });
+}
+
+async function performAutoClean(mode: AutoMode): Promise<void> {
   if (!currentFileContent) {
     alert('No file content available.');
     return;
@@ -310,10 +436,39 @@ function performAutoClean(mode: AutoMode): void {
     return;
   }
 
-  const inputText = currentFileContent;
-  const matches = detectMatches(inputText, PII_PATTERNS).sort((a, b) => b.index - a.index);
+  if (fileType === 'docx') {
+    if (!currentFile) {
+      alert('No file selected.');
+      return;
+    }
 
-  if (matches.length === 0) {
+    try {
+      const { blob, previewText, replacements } = await sanitizeDocxPreservingFormat(currentFile, mode);
+      sanitizedBlob = blob;
+      sanitizedContent = previewText;
+      await renderDocxPreview(sanitizedPreview, blob);
+      downloadBtn.disabled = false;
+
+      if (replacements === 0) {
+        alert('ℹ️ No PII detected. Document appears clean.');
+      } else {
+        alert(`✓ Successfully cleaned ${replacements} PII instance(s) in DOCX!`);
+      }
+      return;
+    } catch (error) {
+      console.error('DOCX sanitization failed:', error);
+      alert('Could not sanitize DOCX while preserving format. The file may be encrypted or malformed.');
+      return;
+    }
+  }
+
+  sanitizedPreview.classList.remove('docx-layout');
+
+  const inputText = currentFileContent;
+  const { cleanedText, replacements } = sanitizePlainText(inputText, mode);
+  sanitizedBlob = null;
+
+  if (replacements === 0) {
     sanitizedContent = inputText;
     sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(inputText) : `<pre>${escapeHtml(inputText)}</pre>`;
     downloadBtn.disabled = false;
@@ -321,19 +476,11 @@ function performAutoClean(mode: AutoMode): void {
     return;
   }
 
-  let cleanedContent = inputText;
-  for (const pii of matches) {
-    const before = cleanedContent.substring(0, pii.index);
-    const after = cleanedContent.substring(pii.index + pii.length);
-
-    cleanedContent = before + (mode === 'hide' ? '█'.repeat(pii.length) : generateFakeData(pii.value, pii.type)) + after;
-  }
-
-  sanitizedContent = cleanedContent;
-  sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(cleanedContent) : `<pre>${escapeHtml(cleanedContent)}</pre>`;
+  sanitizedContent = cleanedText;
+  sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
   downloadBtn.disabled = false;
 
-  alert(`✓ Successfully cleaned ${matches.length} PII instance(s)!`);
+  alert(`✓ Successfully cleaned ${replacements} PII instance(s)!`);
 }
 
 function generateFakeData(original: string, type: string): string {
@@ -392,13 +539,25 @@ function randomInt(min: number, max: number): number {
 }
 
 function downloadSanitizedFile(): void {
-  if (!sanitizedContent) {
+  if (!sanitizedContent && !sanitizedBlob) {
     alert('No sanitized content to download.');
     return;
   }
 
+  if (sanitizedBlob) {
+    const url = URL.createObjectURL(sanitizedBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `sanitized_${currentFileName}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return;
+  }
+
   const blobType = fileType === 'csv' ? 'text/csv' : 'text/plain';
-  const blob = new Blob([sanitizedContent], { type: blobType });
+  const blob = new Blob([sanitizedContent ?? ''], { type: blobType });
   const url = URL.createObjectURL(blob);
 
   const link = document.createElement('a');

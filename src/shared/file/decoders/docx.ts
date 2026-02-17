@@ -18,7 +18,6 @@ export async function decodeDocxFile(file: File, extension: string): Promise<Dec
     extension,
     extractedText,
     previewHtml: `<pre>${escapeHtml(extractedText || 'No readable text found.')}${escapeHtml(warningText)}</pre>`,
-    canSanitizePreservingFormat: false,
-    unsupportedReason: 'DOCX decoding is available, but preserve-format sanitization is not enabled yet.'
+    canSanitizePreservingFormat: true
   };
 }

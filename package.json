@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "docx-preview": "^0.3.6",
     "jszip": "^3.10.1",
     "mammoth": "^1.9.1",
     "papaparse": "^5.5.3",

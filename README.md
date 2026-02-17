@@ -41,7 +41,7 @@ A Chrome extension that automatically detects and alerts you about Personally Id
 **No Auto-Redaction** - Your content is never modified. The extension only notifies you so you can make informed decisions.
 
 ### Step 1: Download the Extension
-Download all files from the `chrome-extension-privacy-shield` folder to a location on your computer.
+Clone or download this repository, then use the repository root folder (this folder) when loading the unpacked extension.
 
 ### Step 2: Enable Developer Mode
 1. Open Google Chrome

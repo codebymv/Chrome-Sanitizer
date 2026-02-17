@@ -7,23 +7,33 @@ import { getExtension } from './utils';
 
 const textExtensions = new Set(['.txt', '.md', '.json', '.xml', '.log', '.html', '.htm']);
 const csvExtensions = new Set(['.csv', '.tsv']);
+const docxExtensions = new Set(['.docx']);
+const pdfExtensions = new Set(['.pdf']);
+const knownBinaryExtensions = new Set([
+  '.docx', '.pdf', '.zip', '.rar', '.7z', '.exe', '.dll', '.bin', '.pptx', '.xlsx'
+]);
 
 const decoders: Decoder[] = [
   {
-    canHandle: (file, extension) => file.type.startsWith('text/') || textExtensions.has(extension),
-    decode: (file, extension) => decodeTextFile(file, extension)
+    canHandle: (_file, extension) => docxExtensions.has(extension),
+    decode: (file, extension) => decodeDocxFile(file, extension)
+  },
+  {
+    canHandle: (file, extension) => file.type === 'application/pdf' || pdfExtensions.has(extension),
+    decode: (file, extension) => decodePdfFile(file, extension)
   },
   {
     canHandle: (file, extension) => file.type === 'text/csv' || csvExtensions.has(extension),
     decode: (file, extension) => decodeCsvFile(file, extension)
   },
   {
-    canHandle: (file, extension) => extension === '.docx',
-    decode: (file, extension) => decodeDocxFile(file, extension)
-  },
-  {
-    canHandle: (file, extension) => file.type === 'application/pdf' || extension === '.pdf',
-    decode: (file, extension) => decodePdfFile(file, extension)
+    canHandle: (file, extension) => {
+      if (knownBinaryExtensions.has(extension)) {
+        return false;
+      }
+      return file.type.startsWith('text/') || textExtensions.has(extension);
+    },
+    decode: (file, extension) => decodeTextFile(file, extension)
   }
 ];
 

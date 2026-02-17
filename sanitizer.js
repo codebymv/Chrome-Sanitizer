@@ -49085,22 +49085,41 @@ Some document structures could not be parsed perfectly.` : "";
   // src/shared/file/registry.ts
   var textExtensions = /* @__PURE__ */ new Set([".txt", ".md", ".json", ".xml", ".log", ".html", ".htm"]);
   var csvExtensions = /* @__PURE__ */ new Set([".csv", ".tsv"]);
+  var docxExtensions = /* @__PURE__ */ new Set([".docx"]);
+  var pdfExtensions = /* @__PURE__ */ new Set([".pdf"]);
+  var knownBinaryExtensions = /* @__PURE__ */ new Set([
+    ".docx",
+    ".pdf",
+    ".zip",
+    ".rar",
+    ".7z",
+    ".exe",
+    ".dll",
+    ".bin",
+    ".pptx",
+    ".xlsx"
+  ]);
   var decoders = [
     {
-      canHandle: (file, extension) => file.type.startsWith("text/") || textExtensions.has(extension),
-      decode: (file, extension) => decodeTextFile(file, extension)
+      canHandle: (_file, extension) => docxExtensions.has(extension),
+      decode: (file, extension) => decodeDocxFile(file, extension)
+    },
+    {
+      canHandle: (file, extension) => file.type === "application/pdf" || pdfExtensions.has(extension),
+      decode: (file, extension) => decodePdfFile(file, extension)
     },
     {
       canHandle: (file, extension) => file.type === "text/csv" || csvExtensions.has(extension),
       decode: (file, extension) => decodeCsvFile(file, extension)
     },
     {
-      canHandle: (file, extension) => extension === ".docx",
-      decode: (file, extension) => decodeDocxFile(file, extension)
-    },
-    {
-      canHandle: (file, extension) => file.type === "application/pdf" || extension === ".pdf",
-      decode: (file, extension) => decodePdfFile(file, extension)
+      canHandle: (file, extension) => {
+        if (knownBinaryExtensions.has(extension)) {
+          return false;
+        }
+        return file.type.startsWith("text/") || textExtensions.has(extension);
+      },
+      decode: (file, extension) => decodeTextFile(file, extension)
     }
   ];
   async function decodeUploadedFile(file) {

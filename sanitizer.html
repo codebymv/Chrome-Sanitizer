@@ -105,6 +105,17 @@
       letter-spacing: -0.4px;
     }
 
+    .upload-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .upload-title-icon {
+      object-fit: contain;
+    }
+
     .upload-zone p {
       color: var(--color-text-tertiary);
       font-size: 13px;
@@ -676,7 +687,10 @@
           <line x1="12" y1="3" x2="12" y2="15" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round"/>
         </svg>
       </div>
-      <h2>File Sanitizer</h2>
+      <div class="upload-title-row">
+        <img src="sani_icon.png" alt="Sani" class="upload-title-icon" width="32" height="32">
+        <h2>File Sanitizer</h2>
+      </div>
       <p>Upload files to detect and remove PII &middot; Max 10 MB</p>
       <div class="upload-mode">
         <div class="upload-mode-title">Default Mode</div>

@@ -23983,6 +23983,257 @@
     }
   ];
 
+  // src/shared/pii/replacement.ts
+  function hashString(input) {
+    let hash = 2166136261;
+    for (let index = 0; index < input.length; index += 1) {
+      hash ^= input.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+  function createRandom(seed) {
+    let state = hashString(seed) || 1;
+    return () => {
+      state |= 0;
+      state = state + 1831565813 | 0;
+      let mixed = Math.imul(state ^ state >>> 15, 1 | state);
+      mixed ^= mixed + Math.imul(mixed ^ mixed >>> 7, 61 | mixed);
+      return ((mixed ^ mixed >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function randomInt(random2, min2, max2) {
+    return Math.floor(random2() * (max2 - min2 + 1)) + min2;
+  }
+  function randomDigit(random2) {
+    return String(randomInt(random2, 0, 9));
+  }
+  function randomLetter(random2, uppercase) {
+    const base = uppercase ? 65 : 97;
+    return String.fromCharCode(base + randomInt(random2, 0, 25));
+  }
+  function replaceByCharacterClass(template2, random2) {
+    let result2 = "";
+    for (const char of template2) {
+      if (/\d/.test(char)) {
+        result2 += randomDigit(random2);
+        continue;
+      }
+      if (/[a-z]/.test(char)) {
+        result2 += randomLetter(random2, false);
+        continue;
+      }
+      if (/[A-Z]/.test(char)) {
+        result2 += randomLetter(random2, true);
+        continue;
+      }
+      result2 += char;
+    }
+    return result2;
+  }
+  function enforceLength(value, source, random2) {
+    if (value.length === source.length) {
+      return value;
+    }
+    if (value.length > source.length) {
+      return value.slice(0, source.length);
+    }
+    let output = value;
+    for (let index = value.length; index < source.length; index += 1) {
+      const sourceChar = source[index] ?? "x";
+      if (/\d/.test(sourceChar)) {
+        output += randomDigit(random2);
+        continue;
+      }
+      if (/[a-z]/.test(sourceChar)) {
+        output += randomLetter(random2, false);
+        continue;
+      }
+      if (/[A-Z]/.test(sourceChar)) {
+        output += randomLetter(random2, true);
+        continue;
+      }
+      output += sourceChar === " " ? " " : "x";
+    }
+    return output;
+  }
+  function isLuhnValid(digits) {
+    let sum = 0;
+    let doubleDigit = false;
+    for (let index = digits.length - 1; index >= 0; index -= 1) {
+      let value = Number(digits[index]);
+      if (doubleDigit) {
+        value *= 2;
+        if (value > 9) {
+          value -= 9;
+        }
+      }
+      sum += value;
+      doubleDigit = !doubleDigit;
+    }
+    return sum % 10 === 0;
+  }
+  function makeLuhnInvalid(digits) {
+    if (!isLuhnValid(digits)) {
+      return digits;
+    }
+    const last2 = Number(digits[digits.length - 1] ?? "0");
+    const replacement = (last2 + 1) % 10;
+    return `${digits.slice(0, -1)}${replacement}`;
+  }
+  function fillDigitsTemplate(template2, digits) {
+    let output = "";
+    let pointer = 0;
+    for (const char of template2) {
+      if (/\d/.test(char)) {
+        output += digits[pointer] ?? "0";
+        pointer += 1;
+        continue;
+      }
+      output += char;
+    }
+    return output;
+  }
+  function replaceDateOfBirth(value, random2) {
+    const separator = value.includes("-") ? "-" : "/";
+    const parts = value.split(/[\/-]/);
+    if (parts.length !== 3) {
+      return replaceByCharacterClass(value, random2);
+    }
+    const month = String(randomInt(random2, 1, 12)).padStart(parts[0]?.length ?? 2, "0");
+    const day = String(randomInt(random2, 1, 28)).padStart(parts[1]?.length ?? 2, "0");
+    const yearLength = parts[2]?.length ?? 4;
+    const yearBase = yearLength === 2 ? randomInt(random2, 10, 89) : randomInt(random2, 1970, 2004);
+    const year = String(yearBase).padStart(yearLength, "0").slice(-yearLength);
+    return `${month}${separator}${day}${separator}${year}`;
+  }
+  function replaceExpiry(value) {
+    const separator = value.includes("-") ? "-" : "/";
+    const yearPart = value.split(/[\/-]/)[1] ?? "00";
+    return `00${separator}${"0".repeat(Math.max(2, yearPart.length)).slice(0, yearPart.length)}`;
+  }
+  function replacePhone(value, random2) {
+    const digitsCount = value.replace(/\D/g, "").length;
+    const digits = [];
+    for (let index = 0; index < digitsCount; index += 1) {
+      digits.push(randomDigit(random2));
+    }
+    if (digits.length >= 10) {
+      digits[0] = "5";
+      digits[1] = "5";
+      digits[2] = "5";
+      digits[3] = "0";
+      digits[4] = "1";
+    }
+    return fillDigitsTemplate(value, digits.join(""));
+  }
+  function replaceEmail(value, random2) {
+    const replaced = replaceByCharacterClass(value, random2).replace(/@/g, "@").replace(/\./g, ".");
+    const atIndex = value.indexOf("@");
+    if (atIndex < 1) {
+      return replaced;
+    }
+    const chars = replaced.split("");
+    chars[atIndex] = "@";
+    const dotIndex = value.lastIndexOf(".");
+    if (dotIndex > atIndex) {
+      chars[dotIndex] = ".";
+    }
+    return chars.join("");
+  }
+  function replaceFinancialLike(value, random2) {
+    const digitsCount = value.replace(/\D/g, "").length;
+    let digits = "";
+    for (let index = 0; index < digitsCount; index += 1) {
+      digits += randomDigit(random2);
+    }
+    digits = makeLuhnInvalid(digits);
+    return fillDigitsTemplate(value, digits);
+  }
+  function replaceRouting(value, random2) {
+    const digitsCount = value.replace(/\D/g, "").length;
+    let digits = "";
+    for (let index = 0; index < digitsCount; index += 1) {
+      digits += randomDigit(random2);
+    }
+    if (digitsCount === 9) {
+      const first2 = digits.slice(0, 8);
+      const check = Number(digits[8] ?? "0");
+      const invalidCheck = (check + 1) % 10;
+      digits = `${first2}${invalidCheck}`;
+    }
+    return fillDigitsTemplate(value, digits);
+  }
+  function replaceSsn(value, random2) {
+    if (value.includes("-")) {
+      return `000-00-${String(randomInt(random2, 1e3, 9999))}`;
+    }
+    return `00000${String(randomInt(random2, 1e3, 9999))}`;
+  }
+  function replaceName(value, random2) {
+    const vowels = ["a", "e", "i", "o", "u"];
+    const consonants = ["b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", "p", "r", "s", "t", "v", "w", "y", "z"];
+    const buildWord = (length, uppercaseFirst) => {
+      let word = "";
+      for (let index = 0; index < length; index += 1) {
+        const source = index % 2 === 0 ? consonants : vowels;
+        const next = source[randomInt(random2, 0, source.length - 1)] ?? "x";
+        word += index === 0 && uppercaseFirst ? next.toUpperCase() : next;
+      }
+      return word;
+    };
+    return value.split(/(\s+)/).map((part) => {
+      if (!part.trim()) {
+        return part;
+      }
+      if (part.length === 2 && part.endsWith(".")) {
+        return `${randomLetter(random2, true)}.`;
+      }
+      const uppercaseFirst = /[A-Z]/.test(part[0] ?? "");
+      return buildWord(part.length, uppercaseFirst);
+    }).join("");
+  }
+  function generateSafeReplacement(match) {
+    const random2 = createRandom(`${match.key}|${match.value}|${match.index}`);
+    let candidate;
+    switch (match.key) {
+      case "fullNameContextual":
+        candidate = replaceName(match.value, random2);
+        break;
+      case "dob":
+        candidate = replaceDateOfBirth(match.value, random2);
+        break;
+      case "email":
+        candidate = replaceEmail(match.value, random2);
+        break;
+      case "phone":
+        candidate = replacePhone(match.value, random2);
+        break;
+      case "creditCard":
+        candidate = replaceFinancialLike(match.value, random2);
+        break;
+      case "cardExpiry":
+        candidate = replaceExpiry(match.value);
+        break;
+      case "cvv":
+        candidate = "0".repeat(match.value.length);
+        break;
+      case "routingNumber":
+        candidate = replaceRouting(match.value, random2);
+        break;
+      case "ssn":
+        candidate = replaceSsn(match.value, random2);
+        break;
+      case "bankAccount":
+        candidate = fillDigitsTemplate(match.value, `0000${"0".repeat(Math.max(0, match.value.replace(/\D/g, "").length - 4))}`);
+        break;
+      default:
+        candidate = replaceByCharacterClass(match.value, random2);
+        break;
+    }
+    return enforceLength(candidate, match.value, random2);
+  }
+
   // src/shared/file/decoders/csv.ts
   var import_papaparse = __toESM(require_papaparse_min(), 1);
 
@@ -53565,14 +53816,32 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       reader.readAsDataURL(file);
     });
   }
-  function fitReplacementLength(replacement, targetLength) {
+  function fitReplacementLength(replacement, sourceValue) {
+    const targetLength = sourceValue.length;
     if (replacement.length === targetLength) {
       return replacement;
     }
     if (replacement.length > targetLength) {
       return replacement.slice(0, targetLength);
     }
-    return replacement + "\u2588".repeat(targetLength - replacement.length);
+    let padded = replacement;
+    for (let index = replacement.length; index < targetLength; index += 1) {
+      const sourceChar = sourceValue[index] ?? "x";
+      if (/\d/.test(sourceChar)) {
+        padded += "0";
+        continue;
+      }
+      if (/[a-z]/.test(sourceChar)) {
+        padded += "x";
+        continue;
+      }
+      if (/[A-Z]/.test(sourceChar)) {
+        padded += "X";
+        continue;
+      }
+      padded += sourceChar === " " ? " " : "x";
+    }
+    return padded;
   }
   function containsResidualRisk(matches) {
     const blockedKeys = /* @__PURE__ */ new Set([
@@ -53590,36 +53859,6 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     ]);
     return matches.some((match) => blockedKeys.has(match.key));
   }
-  function findUnchangedSensitiveValues(cleanedText, originalMatches) {
-    const blockedKeys = /* @__PURE__ */ new Set([
-      "ssn",
-      "creditCard",
-      "bankAccount",
-      "routingNumber",
-      "cvv",
-      "cardExpiry",
-      "fullNameContextual",
-      "email",
-      "phone",
-      "driversLicense",
-      "dob",
-      "streetAddress"
-    ]);
-    const unique = /* @__PURE__ */ new Map();
-    for (const match of originalMatches) {
-      if (!blockedKeys.has(match.key)) {
-        continue;
-      }
-      if (!match.value.trim()) {
-        continue;
-      }
-      const dedupeKey = `${match.key}|${match.value}`;
-      if (!unique.has(dedupeKey) && cleanedText.includes(match.value)) {
-        unique.set(dedupeKey, match);
-      }
-    }
-    return Array.from(unique.values());
-  }
   function formatLeakDetails(matches) {
     if (matches.length === 0) {
       return "";
@@ -53636,20 +53875,26 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     if (matches.length === 0) {
       return {
         cleanedText: inputText,
-        replacements: 0
+        replacements: 0,
+        unchangedMatches: []
       };
     }
     let cleanedText = inputText;
+    const unchangedMatches = [];
     for (const pii of matches) {
       const before2 = cleanedText.substring(0, pii.index);
       const after2 = cleanedText.substring(pii.index + pii.length);
-      const generated = mode === "hide" ? "\u2588".repeat(pii.length) : generateFakeData(pii.value, pii.type);
-      const replacement = fitReplacementLength(generated, pii.length);
+      const generated = mode === "hide" ? "\u2588".repeat(pii.length) : generateSafeReplacement(pii);
+      const replacement = fitReplacementLength(generated, pii.value);
+      if (mode === "replace" && replacement === pii.value) {
+        unchangedMatches.push(pii);
+      }
       cleanedText = before2 + replacement + after2;
     }
     return {
       cleanedText,
-      replacements: matches.length
+      replacements: matches.length,
+      unchangedMatches
     };
   }
   async function sanitizeDocxPreservingFormat(file, mode) {
@@ -53659,6 +53904,7 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       (path) => /^word\/(document|header\d+|footer\d+|footnotes|endnotes|comments)\.xml$/i.test(path)
     );
     let totalReplacements = 0;
+    const unchangedMatches = [];
     const cleanedTextParts = [];
     const parser = new DOMParser();
     const serializer = new XMLSerializer();
@@ -53685,8 +53931,9 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
         if (!paragraphText.trim()) {
           continue;
         }
-        const { cleanedText, replacements } = sanitizePlainText(paragraphText, mode);
+        const { cleanedText, replacements, unchangedMatches: unchangedInParagraph } = sanitizePlainText(paragraphText, mode);
         cleanedTextParts.push(cleanedText);
+        unchangedMatches.push(...unchangedInParagraph);
         if (replacements === 0) {
           continue;
         }
@@ -53713,7 +53960,8 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     return {
       blob: resultBlob,
       previewText: cleanedTextParts.join("\n"),
-      replacements: totalReplacements
+      replacements: totalReplacements,
+      unchangedMatches
     };
   }
   async function renderDocxPreview(container, source) {
@@ -53751,18 +53999,16 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
         return;
       }
       try {
-        const originalMatches2 = detectMatches(currentFileContent, PII_PATTERNS);
-        const { blob, previewText, replacements: replacements2 } = await sanitizeDocxPreservingFormat(currentFile, mode);
+        const { blob, previewText, replacements: replacements2, unchangedMatches: unchangedMatches2 } = await sanitizeDocxPreservingFormat(currentFile, mode);
         const residualMatches2 = detectMatches(previewText, PII_PATTERNS);
-        const unchangedOriginalValues2 = findUnchangedSensitiveValues(previewText, originalMatches2);
-        const shouldBlock2 = mode === "hide" ? containsResidualRisk(residualMatches2) : unchangedOriginalValues2.length > 0;
+        const shouldBlock2 = mode === "hide" ? containsResidualRisk(residualMatches2) : unchangedMatches2.length > 0;
         if (shouldBlock2) {
           sanitizedBlob = null;
           sanitizedContent = previewText;
           downloadBtn.disabled = true;
           await renderDocxPreview(sanitizedPreview, blob);
-          const issueCount = mode === "hide" ? residualMatches2.length : unchangedOriginalValues2.length;
-          const leakDetails = mode === "replace" ? formatLeakDetails(unchangedOriginalValues2) : "";
+          const issueCount = mode === "hide" ? residualMatches2.length : unchangedMatches2.length;
+          const leakDetails = mode === "replace" ? formatLeakDetails(unchangedMatches2) : "";
           setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.${leakDetails}`, "error");
           return;
         }
@@ -53784,18 +54030,17 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     }
     sanitizedPreview.classList.remove("docx-layout");
     const inputText = currentFileContent;
-    const originalMatches = detectMatches(inputText, PII_PATTERNS);
-    const { cleanedText, replacements } = sanitizePlainText(inputText, mode);
+    const { cleanedText, replacements, unchangedMatches } = sanitizePlainText(inputText, mode);
     const residualMatches = detectMatches(cleanedText, PII_PATTERNS);
-    const unchangedOriginalValues = findUnchangedSensitiveValues(cleanedText, originalMatches);
     sanitizedBlob = null;
-    const shouldBlock = mode === "hide" ? containsResidualRisk(residualMatches) : unchangedOriginalValues.length > 0;
+    const shouldBlock = mode === "hide" ? containsResidualRisk(residualMatches) : unchangedMatches.length > 0;
     if (shouldBlock) {
       sanitizedContent = cleanedText;
       sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
       downloadBtn.disabled = true;
-      const issueCount = mode === "hide" ? residualMatches.length : unchangedOriginalValues.length;
-      setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.`, "error");
+      const issueCount = mode === "hide" ? residualMatches.length : unchangedMatches.length;
+      const leakDetails = mode === "replace" ? formatLeakDetails(unchangedMatches) : "";
+      setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.${leakDetails}`, "error");
       return;
     }
     if (replacements === 0) {
@@ -53809,54 +54054,6 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
     downloadBtn.disabled = false;
     setStatus(autoTriggered ? `Auto-sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).` : `Sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).`, "success");
-  }
-  function generateFakeData(original, type) {
-    switch (type) {
-      case "Financial":
-        if (/^\d{3}-\d{2}-\d{4}$/.test(original)) {
-          return `${randomDigits(3)}-${randomDigits(2)}-${randomDigits(4)}`;
-        }
-        if (/^\d{9}$/.test(original)) {
-          return randomDigits(9);
-        }
-        return `${randomDigits(4)}-${randomDigits(4)}-${randomDigits(4)}-${randomDigits(4)}`;
-      case "Phone Number":
-        return `(${randomDigits(3)}) ${randomDigits(3)}-${randomDigits(4)}`;
-      case "Email Address": {
-        const domain = original.includes("@") ? original.split("@")[1] : "example.com";
-        return `user${randomDigits(4)}@${domain}`;
-      }
-      case "ZIP Code":
-        return original.length > 5 ? `${randomDigits(5)}-${randomDigits(4)}` : randomDigits(5);
-      case "IP Address":
-        return `${randomInt(1, 255)}.${randomInt(1, 255)}.${randomInt(1, 255)}.${randomInt(1, 255)}`;
-      case "Date of Birth":
-        return `${randomDigits(2)}/${randomDigits(2)}/${randomDigits(4)}`;
-      case "Street Address":
-        return `${randomInt(100, 9999)} ${randomLetters(2)} St`;
-      default:
-        return original.split("").map((char) => {
-          if (/\d/.test(char)) {
-            return String(Math.floor(Math.random() * 10));
-          }
-          if (/[a-z]/.test(char)) {
-            return String.fromCharCode(97 + Math.floor(Math.random() * 26));
-          }
-          if (/[A-Z]/.test(char)) {
-            return String.fromCharCode(65 + Math.floor(Math.random() * 26));
-          }
-          return char;
-        }).join("");
-    }
-  }
-  function randomDigits(count) {
-    return Array.from({ length: count }, () => Math.floor(Math.random() * 10)).join("");
-  }
-  function randomLetters(count) {
-    return Array.from({ length: count }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join("");
-  }
-  function randomInt(min2, max2) {
-    return Math.floor(Math.random() * (max2 - min2 + 1)) + min2;
   }
   function downloadSanitizedFile() {
     if (!sanitizedContent && !sanitizedBlob) {

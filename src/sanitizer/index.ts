@@ -1,6 +1,7 @@
 import { detectMatches } from '../shared/pii/detector';
 import { PII_PATTERNS } from '../shared/pii/patterns';
 import type { DetectedMatch } from '../shared/types';
+import { generateSafeReplacement } from '../shared/pii/replacement';
 import { decodeUploadedFile } from '../shared/file/registry';
 import type { DecodedFile } from '../shared/file/types';
 import { getExtension, isImageFile, escapeHtml } from '../shared/file/utils';
@@ -403,14 +404,33 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-function fitReplacementLength(replacement: string, targetLength: number): string {
+function fitReplacementLength(replacement: string, sourceValue: string): string {
+  const targetLength = sourceValue.length;
   if (replacement.length === targetLength) {
     return replacement;
   }
   if (replacement.length > targetLength) {
     return replacement.slice(0, targetLength);
   }
-  return replacement + '█'.repeat(targetLength - replacement.length);
+
+  let padded = replacement;
+  for (let index = replacement.length; index < targetLength; index += 1) {
+    const sourceChar = sourceValue[index] ?? 'x';
+    if (/\d/.test(sourceChar)) {
+      padded += '0';
+      continue;
+    }
+    if (/[a-z]/.test(sourceChar)) {
+      padded += 'x';
+      continue;
+    }
+    if (/[A-Z]/.test(sourceChar)) {
+      padded += 'X';
+      continue;
+    }
+    padded += sourceChar === ' ' ? ' ' : 'x';
+  }
+  return padded;
 }
 
 function containsResidualRisk(matches: DetectedMatch[]): boolean {
@@ -431,39 +451,6 @@ function containsResidualRisk(matches: DetectedMatch[]): boolean {
   return matches.some((match) => blockedKeys.has(match.key));
 }
 
-function findUnchangedSensitiveValues(cleanedText: string, originalMatches: DetectedMatch[]): DetectedMatch[] {
-  const blockedKeys = new Set([
-    'ssn',
-    'creditCard',
-    'bankAccount',
-    'routingNumber',
-    'cvv',
-    'cardExpiry',
-    'fullNameContextual',
-    'email',
-    'phone',
-    'driversLicense',
-    'dob',
-    'streetAddress'
-  ]);
-
-  const unique = new Map<string, DetectedMatch>();
-  for (const match of originalMatches) {
-    if (!blockedKeys.has(match.key)) {
-      continue;
-    }
-    if (!match.value.trim()) {
-      continue;
-    }
-    const dedupeKey = `${match.key}|${match.value}`;
-    if (!unique.has(dedupeKey) && cleanedText.includes(match.value)) {
-      unique.set(dedupeKey, match);
-    }
-  }
-
-  return Array.from(unique.values());
-}
-
 function formatLeakDetails(matches: DetectedMatch[]): string {
   if (matches.length === 0) {
     return '';
@@ -477,28 +464,38 @@ function formatLeakDetails(matches: DetectedMatch[]): string {
   return ` First unresolved field: ${first.type} (${sample}).`;
 }
 
-function sanitizePlainText(inputText: string, mode: AutoMode): { cleanedText: string; replacements: number } {
+function sanitizePlainText(inputText: string, mode: AutoMode): {
+  cleanedText: string;
+  replacements: number;
+  unchangedMatches: DetectedMatch[];
+} {
   const matches = detectMatches(inputText, PII_PATTERNS).sort((a, b) => b.index - a.index);
 
   if (matches.length === 0) {
     return {
       cleanedText: inputText,
-      replacements: 0
+      replacements: 0,
+      unchangedMatches: []
     };
   }
 
   let cleanedText = inputText;
+  const unchangedMatches: DetectedMatch[] = [];
   for (const pii of matches) {
     const before = cleanedText.substring(0, pii.index);
     const after = cleanedText.substring(pii.index + pii.length);
-    const generated = mode === 'hide' ? '█'.repeat(pii.length) : generateFakeData(pii.value, pii.type);
-    const replacement = fitReplacementLength(generated, pii.length);
+    const generated = mode === 'hide' ? '█'.repeat(pii.length) : generateSafeReplacement(pii);
+    const replacement = fitReplacementLength(generated, pii.value);
+    if (mode === 'replace' && replacement === pii.value) {
+      unchangedMatches.push(pii);
+    }
     cleanedText = before + replacement + after;
   }
 
   return {
     cleanedText,
-    replacements: matches.length
+    replacements: matches.length,
+    unchangedMatches
   };
 }
 
@@ -506,6 +503,7 @@ async function sanitizeDocxPreservingFormat(file: File, mode: AutoMode): Promise
   blob: Blob;
   previewText: string;
   replacements: number;
+  unchangedMatches: DetectedMatch[];
 }> {
   const buffer = await file.arrayBuffer();
   const zip = await JSZip.loadAsync(buffer);
@@ -514,6 +512,7 @@ async function sanitizeDocxPreservingFormat(file: File, mode: AutoMode): Promise
   );
 
   let totalReplacements = 0;
+  const unchangedMatches: DetectedMatch[] = [];
   const cleanedTextParts: string[] = [];
   const parser = new DOMParser();
   const serializer = new XMLSerializer();
@@ -547,8 +546,9 @@ async function sanitizeDocxPreservingFormat(file: File, mode: AutoMode): Promise
         continue;
       }
 
-      const { cleanedText, replacements } = sanitizePlainText(paragraphText, mode);
+      const { cleanedText, replacements, unchangedMatches: unchangedInParagraph } = sanitizePlainText(paragraphText, mode);
       cleanedTextParts.push(cleanedText);
+      unchangedMatches.push(...unchangedInParagraph);
 
       if (replacements === 0) {
         continue;
@@ -581,7 +581,8 @@ async function sanitizeDocxPreservingFormat(file: File, mode: AutoMode): Promise
   return {
     blob: resultBlob,
     previewText: cleanedTextParts.join('\n'),
-    replacements: totalReplacements
+    replacements: totalReplacements,
+    unchangedMatches
   };
 }
 
@@ -627,21 +628,19 @@ async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise
     }
 
     try {
-      const originalMatches = detectMatches(currentFileContent, PII_PATTERNS);
-      const { blob, previewText, replacements } = await sanitizeDocxPreservingFormat(currentFile, mode);
+      const { blob, previewText, replacements, unchangedMatches } = await sanitizeDocxPreservingFormat(currentFile, mode);
       const residualMatches = detectMatches(previewText, PII_PATTERNS);
-      const unchangedOriginalValues = findUnchangedSensitiveValues(previewText, originalMatches);
       const shouldBlock = mode === 'hide'
         ? containsResidualRisk(residualMatches)
-        : unchangedOriginalValues.length > 0;
+        : unchangedMatches.length > 0;
 
       if (shouldBlock) {
         sanitizedBlob = null;
         sanitizedContent = previewText;
         downloadBtn.disabled = true;
         await renderDocxPreview(sanitizedPreview, blob);
-        const issueCount = mode === 'hide' ? residualMatches.length : unchangedOriginalValues.length;
-        const leakDetails = mode === 'replace' ? formatLeakDetails(unchangedOriginalValues) : '';
+        const issueCount = mode === 'hide' ? residualMatches.length : unchangedMatches.length;
+        const leakDetails = mode === 'replace' ? formatLeakDetails(unchangedMatches) : '';
         setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.${leakDetails}`, 'error');
         return;
       }
@@ -669,22 +668,21 @@ async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise
   sanitizedPreview.classList.remove('docx-layout');
 
   const inputText = currentFileContent;
-  const originalMatches = detectMatches(inputText, PII_PATTERNS);
-  const { cleanedText, replacements } = sanitizePlainText(inputText, mode);
+  const { cleanedText, replacements, unchangedMatches } = sanitizePlainText(inputText, mode);
   const residualMatches = detectMatches(cleanedText, PII_PATTERNS);
-  const unchangedOriginalValues = findUnchangedSensitiveValues(cleanedText, originalMatches);
   sanitizedBlob = null;
 
   const shouldBlock = mode === 'hide'
     ? containsResidualRisk(residualMatches)
-    : unchangedOriginalValues.length > 0;
+    : unchangedMatches.length > 0;
 
   if (shouldBlock) {
     sanitizedContent = cleanedText;
     sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
     downloadBtn.disabled = true;
-    const issueCount = mode === 'hide' ? residualMatches.length : unchangedOriginalValues.length;
-    setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.`, 'error');
+    const issueCount = mode === 'hide' ? residualMatches.length : unchangedMatches.length;
+    const leakDetails = mode === 'replace' ? formatLeakDetails(unchangedMatches) : '';
+    setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.${leakDetails}`, 'error');
     return;
   }
 

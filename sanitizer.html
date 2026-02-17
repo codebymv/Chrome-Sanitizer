@@ -248,6 +248,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      min-height: 41px;
       text-transform: uppercase;
       letter-spacing: 0.6px;
     }
@@ -255,6 +256,11 @@
     .header-buttons {
       display: flex;
       gap: 6px;
+    }
+
+    .header-buttons.placeholder {
+      visibility: hidden;
+      pointer-events: none;
     }
 
     .icon-button {
@@ -622,7 +628,13 @@
       </div>
 
       <div class="preview-section">
-        <div class="preview-header">Sanitized</div>
+        <div class="preview-header">
+          <span>Sanitized</span>
+          <div class="header-buttons placeholder" aria-hidden="true">
+            <span class="icon-button"></span>
+            <span class="icon-button"></span>
+          </div>
+        </div>
         <div class="preview-content" id="sanitizedPreview"></div>
         <button class="download-button" id="downloadBtn" disabled>Download Sanitized File</button>
       </div>

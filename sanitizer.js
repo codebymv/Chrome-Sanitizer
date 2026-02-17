@@ -24042,6 +24042,23 @@
     }
     return result2;
   }
+  function buildPronounceableWord(length, random2, uppercaseFirst) {
+    const vowels = ["a", "e", "i", "o", "u"];
+    const consonants = ["b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", "p", "r", "s", "t", "v", "w", "y", "z"];
+    if (length <= 0) {
+      return "";
+    }
+    let output = "";
+    for (let index = 0; index < length; index += 1) {
+      const source = index % 2 === 0 ? consonants : vowels;
+      const letter = pickFrom(random2, source);
+      output += letter;
+    }
+    if (uppercaseFirst) {
+      return `${output[0]?.toUpperCase() ?? "X"}${output.slice(1)}`;
+    }
+    return output;
+  }
   function enforceLength(value, source, random2) {
     if (value.length === source.length) {
       return value;
@@ -24144,28 +24161,22 @@
     if (atIndex < 1 || dotIndex <= atIndex + 1) {
       return replaceByCharacterClass(value, random2);
     }
-    const localLength = atIndex;
-    const domainLength = dotIndex - atIndex - 1;
-    const tldLength = value.length - dotIndex - 1;
-    const localWords = ["anon", "safe", "mask", "proxy", "user", "token"];
-    const domainWords = ["example", "sandbox", "placeholder", "redacted", "privacy"];
-    const tldWords = ["invalid", "test", "safe", "mask"];
-    let local = pickFrom(random2, localWords);
-    while (local.length < localLength) {
-      local += randomDigit(random2);
-    }
-    local = local.slice(0, localLength);
-    let domain = pickFrom(random2, domainWords);
-    while (domain.length < domainLength) {
-      domain += randomLetter(random2, false);
-    }
-    domain = domain.slice(0, domainLength);
-    let tld = pickFrom(random2, tldWords);
-    while (tld.length < tldLength) {
-      tld += randomLetter(random2, false);
-    }
-    tld = tld.slice(0, tldLength);
-    return `${local}@${domain}.${tld}`;
+    const local = value.slice(0, atIndex);
+    const domain = value.slice(atIndex + 1, dotIndex);
+    const tld = value.slice(dotIndex + 1);
+    const transformSegment = (segment) => {
+      const tokens = segment.match(/[A-Za-z]+|\d+|[^A-Za-z\d]+/g) ?? [segment];
+      return tokens.map((token) => {
+        if (/^[A-Za-z]+$/.test(token)) {
+          return buildPronounceableWord(token.length, random2, false);
+        }
+        if (/^\d+$/.test(token)) {
+          return token.split("").map(() => randomDigit(random2)).join("");
+        }
+        return token;
+      }).join("");
+    };
+    return `${transformSegment(local)}@${transformSegment(domain)}.${transformSegment(tld)}`;
   }
   function replaceFinancialLike(value, random2) {
     const digitsCount = value.replace(/\D/g, "").length;
@@ -24201,22 +24212,6 @@
     return `00000${String(randomInt(random2, 1e3, 9999))}`;
   }
   function replaceName(value, random2) {
-    const firstNames = ["Avery", "Jordan", "Taylor", "Riley", "Morgan", "Quinn", "Parker", "Rowan", "Casey", "Elliot"];
-    const lastNames = ["Harwood", "Bennett", "Caldwell", "Whitaker", "Sullivan", "Montrose", "Hawthorne", "Bradford", "Langford", "Ellison"];
-    const buildWord = (length, uppercaseFirst, pool) => {
-      let candidate = pickFrom(random2, pool);
-      while (candidate.length < length) {
-        candidate += pickFrom(random2, pool).toLowerCase();
-      }
-      candidate = candidate.slice(0, length);
-      if (length > 3) {
-        candidate = `${candidate.slice(0, length - 1)}x`;
-      }
-      if (uppercaseFirst) {
-        return `${candidate[0]?.toUpperCase() ?? "X"}${candidate.slice(1).toLowerCase()}`;
-      }
-      return candidate.toLowerCase();
-    };
     return value.split(/(\s+)/).map((part) => {
       if (!part.trim()) {
         return part;
@@ -24225,22 +24220,43 @@
         return "X.";
       }
       const uppercaseFirst = /[A-Z]/.test(part[0] ?? "");
-      const useFirstPool = random2() > 0.5;
-      return buildWord(part.length, uppercaseFirst, useFirstPool ? firstNames : lastNames);
+      return buildPronounceableWord(part.length, random2, uppercaseFirst);
     }).join("");
   }
   function replaceStreetAddress(value, random2) {
-    const streetRoots = ["Maple", "Willow", "Cedar", "Oak", "Harbor", "Pine", "River", "Summit", "Lake", "Elm"];
-    const streetSuffix = ["Street", "Avenue", "Road", "Lane", "Drive", "Court", "Boulevard"];
-    const cityNames = ["Springfield", "Riverton", "Fairview", "Brookfield", "Lakeside", "Hillcrest", "Woodland", "Greendale"];
-    const number = String(randomInt(random2, 100, 9899));
-    const street = `${pickFrom(random2, streetRoots)} ${pickFrom(random2, streetSuffix)}`;
-    const includeUnit = value.toLowerCase().includes("apt") || value.toLowerCase().includes("suite") || value.includes("#");
-    const unit = includeUnit ? `, Apt ${randomInt(random2, 1, 999)}${randomLetter(random2, true)}` : "";
-    const city = pickFrom(random2, cityNames);
-    const state = "ZZ";
-    const zip = `9${String(randomInt(random2, 0, 9999)).padStart(4, "0")}`;
-    return `${number} ${street}${unit}, ${city}, ${state} ${zip}`;
+    const tokens = value.match(/[A-Za-z]+|\d+|[^A-Za-z\d]+/g) ?? [value];
+    let alphaWordIndex = 0;
+    return tokens.map((token) => {
+      if (/^\d+$/.test(token)) {
+        if (token.length >= 5) {
+          const generated = `9${String(randomInt(random2, 0, 10 ** Math.max(1, token.length - 1) - 1)).padStart(Math.max(1, token.length - 1), "0")}`;
+          return generated.slice(0, token.length);
+        }
+        return token.split("").map(() => randomDigit(random2)).join("");
+      }
+      if (/^[A-Za-z]+$/.test(token)) {
+        const lower = token.toLowerCase();
+        if (token.length === 2 && token.toUpperCase() === token) {
+          return "ZZ";
+        }
+        if (lower === "apt") {
+          return "Apt";
+        }
+        if (lower === "suite" || lower === "ste") {
+          return "Suite".slice(0, token.length);
+        }
+        const uppercaseFirst = /[A-Z]/.test(token[0] ?? "");
+        const replacement = buildPronounceableWord(token.length, random2, uppercaseFirst);
+        alphaWordIndex += 1;
+        if (alphaWordIndex === 2 && token.length >= 3) {
+          const suffixes = ["St", "Rd", "Ave", "Ln", "Dr", "Ct", "Blvd"];
+          const suffix = pickFrom(random2, suffixes);
+          return replacement.length <= suffix.length ? replacement : `${replacement.slice(0, replacement.length - suffix.length)}${suffix}`;
+        }
+        return replacement;
+      }
+      return token;
+    }).join("");
   }
   function replaceDriversLicense(value) {
     let output = "";
@@ -53560,6 +53576,7 @@ section.${c}>footer { z-index: 1; }
 
   // src/sanitizer/index.ts
   var MODE_STORAGE_KEY = "preferredAutoMode";
+  var AUTO_RUN_STORAGE_KEY = "autoRunOnUpload";
   var uploadZone = mustGet("uploadZone");
   var fileInput = mustGet("fileInput");
   var mainContainer = mustGet("mainContainer");
@@ -53573,7 +53590,12 @@ section.${c}>footer { z-index: 1; }
   var statusBanner = mustGet("statusBanner");
   var preModeHide = mustGet("preModeHide");
   var preModeReplace = mustGet("preModeReplace");
+  var preAutoRunRow = mustGet("preAutoRunRow");
+  var preAutoRunToggle = mustGet("preAutoRunToggle");
   var preModeHelp = mustGet("preModeHelp");
+  var manualHelperText = mustGet("manualHelperText");
+  var manualSummary = mustGet("manualSummary");
+  var manualList = mustGet("manualList");
   var autoModeRadios = Array.from(document.querySelectorAll('input[name="autoMode"]'));
   var manualModeRadios = Array.from(document.querySelectorAll('input[name="manualMode"]'));
   var currentFile = null;
@@ -53585,7 +53607,11 @@ section.${c}>footer { z-index: 1; }
   var currentDecodedFile = null;
   var sanitizedBlob = null;
   var selectedAutoMode = "hide";
+  var autoRunOnUpload = true;
   var syncingScroll = false;
+  var selectedManualMode = "";
+  var manualSelection = /* @__PURE__ */ new Map();
+  var manualCandidates = [];
   uploadZone.addEventListener("click", () => {
     fileInput.click();
   });
@@ -53613,6 +53639,11 @@ section.${c}>footer { z-index: 1; }
   });
   resetSelectionsBtn.addEventListener("click", () => {
     applySelectedMode(selectedAutoMode, true);
+    if (selectedManualMode) {
+      manualSelection = selectedManualMode === "highlight" ? new Map(manualCandidates.map((candidate) => [candidate.id, candidate])) : /* @__PURE__ */ new Map();
+      updateManualReviewUi();
+      renderManualPreview();
+    }
     clearStatus();
   });
   clearFileBtn.addEventListener("click", () => {
@@ -53627,8 +53658,12 @@ section.${c}>footer { z-index: 1; }
         return;
       }
       applySelectedMode(target.value, true);
-      if (currentFileContent && currentDecodedFile?.canSanitizePreservingFormat) {
+      if (autoRunOnUpload && currentFileContent && currentDecodedFile?.canSanitizePreservingFormat) {
         void performAutoClean(selectedAutoMode, false);
+        return;
+      }
+      if (currentFileContent && currentDecodedFile?.canSanitizePreservingFormat) {
+        setStatus("Mode updated. Click Clean to sanitize this file.", "warning");
       }
     });
   });
@@ -53640,12 +53675,45 @@ section.${c}>footer { z-index: 1; }
     event.stopPropagation();
     applySelectedMode("replace", true);
   });
+  preAutoRunRow.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+  preAutoRunToggle.addEventListener("change", (event) => {
+    event.stopPropagation();
+    setAutoRunPreference(preAutoRunToggle.checked, true);
+  });
   manualModeRadios.forEach((radio) => {
-    radio.addEventListener("click", (event) => {
+    radio.addEventListener("change", (event) => {
       const target = event.target;
-      setStatus("Manual mode is coming soon. Auto mode remains active.", "warning");
-      target.checked = false;
+      if (!target.checked) {
+        return;
+      }
+      applyManualMode(target.value);
     });
+  });
+  manualList.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") {
+      return;
+    }
+    const id = target.dataset.manualId;
+    if (!id) {
+      return;
+    }
+    toggleManualSelection(id, target.checked);
+  });
+  originalPreview.addEventListener("click", (event) => {
+    if (!selectedManualMode) {
+      return;
+    }
+    const target = event.target;
+    const hit = target.closest(".manual-hit");
+    const id = hit?.dataset.manualId;
+    if (!id) {
+      return;
+    }
+    const isChecked = !manualSelection.has(id);
+    toggleManualSelection(id, isChecked);
   });
   autoCleanBtn.addEventListener("click", () => {
     if (!currentFileContent) {
@@ -53655,7 +53723,11 @@ section.${c}>footer { z-index: 1; }
     void performAutoClean(selectedAutoMode, false);
   });
   manualCleanBtn.addEventListener("click", () => {
-    setStatus("Manual mode is coming soon. Auto mode remains active.", "warning");
+    if (!selectedManualMode) {
+      setStatus("Choose Select or Highlight mode before applying manual sanitization.", "warning");
+      return;
+    }
+    void performManualClean();
   });
   downloadBtn.addEventListener("click", () => {
     downloadSanitizedFile();
@@ -53671,20 +53743,37 @@ section.${c}>footer { z-index: 1; }
   }
   async function initializeUiPreferences() {
     try {
-      const result2 = await chrome.storage.local.get([MODE_STORAGE_KEY]);
+      const result2 = await chrome.storage.local.get([MODE_STORAGE_KEY, AUTO_RUN_STORAGE_KEY]);
       const stored = result2[MODE_STORAGE_KEY];
       if (stored === "hide" || stored === "replace") {
         selectedAutoMode = stored;
       }
+      if (typeof result2[AUTO_RUN_STORAGE_KEY] === "boolean") {
+        autoRunOnUpload = result2[AUTO_RUN_STORAGE_KEY];
+      }
     } catch (error) {
       console.warn("Could not load preferred mode from storage:", error);
     }
+    setAutoRunPreference(autoRunOnUpload, false);
     applySelectedMode(selectedAutoMode, false);
   }
   function updatePreModeUi(mode) {
     preModeHide.classList.toggle("active", mode === "hide");
     preModeReplace.classList.toggle("active", mode === "replace");
-    preModeHelp.textContent = mode === "hide" ? "Hide masks sensitive values with blocks. Applied automatically after upload." : "Replace swaps sensitive values with realistic placeholders. Applied automatically after upload.";
+    if (autoRunOnUpload) {
+      preModeHelp.textContent = mode === "hide" ? "Hide masks sensitive values with blocks. Applied automatically after upload." : "Replace swaps sensitive values with realistic placeholders. Applied automatically after upload.";
+      return;
+    }
+    preModeHelp.textContent = mode === "hide" ? "Hide masks sensitive values with blocks. Choose mode now, then click Clean after upload." : "Replace swaps sensitive values with realistic placeholders. Choose mode now, then click Clean after upload.";
+  }
+  function setAutoRunPreference(enabled, persist) {
+    autoRunOnUpload = enabled;
+    preAutoRunToggle.checked = enabled;
+    autoCleanBtn.textContent = enabled ? "Re-run" : "Clean";
+    updatePreModeUi(selectedAutoMode);
+    if (persist) {
+      void chrome.storage.local.set({ [AUTO_RUN_STORAGE_KEY]: enabled });
+    }
   }
   function applySelectedMode(mode, persist) {
     selectedAutoMode = mode;
@@ -53693,6 +53782,7 @@ section.${c}>footer { z-index: 1; }
     });
     updatePreModeUi(mode);
     autoCleanBtn.disabled = !currentFileContent;
+    updateManualHelperText();
     if (persist) {
       void chrome.storage.local.set({ [MODE_STORAGE_KEY]: mode });
     }
@@ -53731,6 +53821,9 @@ section.${c}>footer { z-index: 1; }
     fileType = "";
     currentDecodedFile = null;
     sanitizedBlob = null;
+    selectedManualMode = "";
+    manualSelection = /* @__PURE__ */ new Map();
+    manualCandidates = [];
     autoModeRadios.forEach((radio) => {
       radio.disabled = false;
     });
@@ -53742,6 +53835,8 @@ section.${c}>footer { z-index: 1; }
     manualCleanBtn.disabled = true;
     downloadBtn.disabled = true;
     applySelectedMode(selectedAutoMode, false);
+    updateManualReviewUi();
+    updateManualHelperText();
     originalPreview.innerHTML = "";
     sanitizedPreview.innerHTML = "";
     originalPreview.classList.remove("docx-layout");
@@ -53759,10 +53854,15 @@ section.${c}>footer { z-index: 1; }
       radio.checked = false;
       radio.disabled = false;
     });
+    selectedManualMode = "";
+    manualSelection = /* @__PURE__ */ new Map();
+    manualCandidates = [];
     autoCleanBtn.disabled = true;
     manualCleanBtn.disabled = true;
     downloadBtn.disabled = true;
     applySelectedMode(selectedAutoMode, false);
+    updateManualReviewUi();
+    updateManualHelperText();
     sanitizedContent = null;
     sanitizedBlob = null;
   }
@@ -53810,18 +53910,35 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
         autoCleanBtn.disabled = true;
         manualCleanBtn.disabled = true;
         downloadBtn.disabled = true;
+        selectedManualMode = "";
+        manualSelection = /* @__PURE__ */ new Map();
+        manualCandidates = [];
+        updateManualReviewUi();
+        updateManualHelperText("Manual review is unavailable for this file type.");
         setStatus(decoded.unsupportedReason ?? "Unsupported file format.", "warning");
         showPreview();
         return;
       }
       currentFileContent = decoded.extractedText;
       detectedPII = detectMatches(decoded.extractedText, PII_PATTERNS);
+      manualCandidates = buildManualCandidates(detectedPII);
+      manualSelection = /* @__PURE__ */ new Map();
       fileType = decoded.kind;
       if (decoded.kind === "docx") {
         await renderDocxPreview(originalPreview, file);
+        manualModeRadios.forEach((radio) => {
+          radio.disabled = false;
+        });
+        updateManualReviewUi();
+        updateManualHelperText("Manual mode for DOCX uses the review list. Inline highlight is not shown in document preview.");
       } else {
         originalPreview.classList.remove("docx-layout");
         originalPreview.innerHTML = decoded.previewHtml;
+        manualModeRadios.forEach((radio) => {
+          radio.disabled = false;
+        });
+        updateManualReviewUi();
+        updateManualHelperText();
       }
       if (!decoded.canSanitizePreservingFormat) {
         sanitizedPreview.classList.remove("docx-layout");
@@ -53837,6 +53954,11 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
         autoCleanBtn.disabled = true;
         manualCleanBtn.disabled = true;
         downloadBtn.disabled = true;
+        selectedManualMode = "";
+        manualSelection = /* @__PURE__ */ new Map();
+        manualCandidates = [];
+        updateManualReviewUi();
+        updateManualHelperText("Manual review is unavailable for this file type.");
         setStatus(decoded.unsupportedReason ?? "Preserve-format sanitization is unavailable for this file type.", "warning");
         showPreview();
         return;
@@ -53845,7 +53967,12 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       sanitizedPreview.innerHTML = "<pre>Sanitizing automatically\u2026</pre>";
       autoCleanBtn.disabled = false;
       showPreview();
-      await performAutoClean(selectedAutoMode, true);
+      if (autoRunOnUpload) {
+        await performAutoClean(selectedAutoMode, true);
+        return;
+      }
+      sanitizedPreview.innerHTML = "<pre>Ready to sanitize. Click Clean when you are ready.</pre>";
+      setStatus("Preview ready. Select mode if needed, then click Clean.", "warning");
     } catch (error) {
       console.error("Error reading file:", error);
       setStatus("Error reading file. Please try again.", "error");
@@ -53968,7 +54095,34 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       unchangedMatches
     };
   }
-  async function sanitizeDocxPreservingFormat(file, mode) {
+  function sanitizeBySelectedMatches(inputText, mode, matches) {
+    const orderedMatches = [...matches].sort((a, b) => b.index - a.index);
+    if (orderedMatches.length === 0) {
+      return {
+        cleanedText: inputText,
+        replacements: 0,
+        unchangedMatches: []
+      };
+    }
+    let cleanedText = inputText;
+    const unchangedMatches = [];
+    for (const pii of orderedMatches) {
+      const before2 = cleanedText.substring(0, pii.index);
+      const after2 = cleanedText.substring(pii.index + pii.length);
+      const generated = mode === "hide" ? "\u2588".repeat(pii.length) : generateSafeReplacement(pii);
+      const replacement = fitReplacementLength(generated, pii.value);
+      if (mode === "replace" && replacement === pii.value) {
+        unchangedMatches.push(pii);
+      }
+      cleanedText = before2 + replacement + after2;
+    }
+    return {
+      cleanedText,
+      replacements: orderedMatches.length,
+      unchangedMatches
+    };
+  }
+  async function sanitizeDocxPreservingFormat(file, mode, selectedOccurrences) {
     const buffer = await file.arrayBuffer();
     const zip = await import_jszip2.default.loadAsync(buffer);
     const xmlTargets = Object.keys(zip.files).filter(
@@ -53979,6 +54133,7 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     const cleanedTextParts = [];
     const parser = new DOMParser();
     const serializer = new XMLSerializer();
+    const seenOccurrences = /* @__PURE__ */ new Map();
     for (const target of xmlTargets) {
       const entry = zip.file(target);
       if (!entry) {
@@ -54002,7 +54157,14 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
         if (!paragraphText.trim()) {
           continue;
         }
-        const { cleanedText, replacements, unchangedMatches: unchangedInParagraph } = sanitizePlainText(paragraphText, mode);
+        const paragraphMatches = detectMatches(paragraphText, PII_PATTERNS).sort((a, b) => a.index - b.index);
+        const selectedMatches = selectedOccurrences ? paragraphMatches.filter((match) => {
+          const signature = matchSignature(match);
+          const nextOccurrence = (seenOccurrences.get(signature) ?? 0) + 1;
+          seenOccurrences.set(signature, nextOccurrence);
+          return selectedOccurrences.get(signature)?.has(nextOccurrence) ?? false;
+        }) : paragraphMatches;
+        const { cleanedText, replacements, unchangedMatches: unchangedInParagraph } = sanitizeBySelectedMatches(paragraphText, mode, selectedMatches);
         cleanedTextParts.push(cleanedText);
         unchangedMatches.push(...unchangedInParagraph);
         if (replacements === 0) {
@@ -54125,6 +54287,190 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
     downloadBtn.disabled = false;
     setStatus(autoTriggered ? `Auto-sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).` : `Sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).`, "success");
+  }
+  async function performManualClean() {
+    if (!currentFileContent) {
+      setStatus("Upload a supported file to sanitize first.", "warning");
+      return;
+    }
+    if (fileType === "image") {
+      setStatus("Manual selection is not supported for images.", "warning");
+      return;
+    }
+    const selectedCandidates = Array.from(manualSelection.values());
+    if (selectedCandidates.length === 0) {
+      setStatus("Select at least one detected value to apply manual sanitization.", "warning");
+      return;
+    }
+    if (fileType === "docx") {
+      if (!currentFile) {
+        setStatus("No file selected.", "warning");
+        return;
+      }
+      try {
+        const selectionTarget = buildSelectedOccurrences(selectedCandidates);
+        const { blob, previewText, replacements: replacements2, unchangedMatches: unchangedMatches2 } = await sanitizeDocxPreservingFormat(currentFile, selectedAutoMode, selectionTarget);
+        if (selectedAutoMode === "replace" && unchangedMatches2.length > 0) {
+          sanitizedBlob = null;
+          sanitizedContent = previewText;
+          downloadBtn.disabled = true;
+          await renderDocxPreview(sanitizedPreview, blob);
+          const leakDetails = formatLeakDetails(unchangedMatches2);
+          setStatus(`Manual sanitization blocked: ${unchangedMatches2.length} selected value(s) were not replaced.${leakDetails}`, "error");
+          return;
+        }
+        sanitizedBlob = blob;
+        sanitizedContent = previewText;
+        await renderDocxPreview(sanitizedPreview, blob);
+        downloadBtn.disabled = false;
+        const untouchedCount2 = Math.max(detectedPII.length - replacements2, 0);
+        setStatus(`Applied manual ${selectedAutoMode} to ${replacements2} selection(s). ${untouchedCount2} detected value(s) were left unchanged by choice.`, "success");
+        return;
+      } catch (error) {
+        console.error("Manual DOCX sanitization failed:", error);
+        setStatus("Could not apply manual sanitization to DOCX while preserving format.", "error");
+        return;
+      }
+    }
+    const selectedMatches = selectedCandidates.map((candidate) => candidate.match);
+    const { cleanedText, replacements, unchangedMatches } = sanitizeBySelectedMatches(currentFileContent, selectedAutoMode, selectedMatches);
+    if (selectedAutoMode === "replace" && unchangedMatches.length > 0) {
+      const leakDetails = formatLeakDetails(unchangedMatches);
+      setStatus(`Manual sanitization blocked: ${unchangedMatches.length} selected value(s) were not replaced.${leakDetails}`, "error");
+      return;
+    }
+    sanitizedBlob = null;
+    sanitizedContent = cleanedText;
+    sanitizedPreview.classList.remove("docx-layout");
+    sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
+    downloadBtn.disabled = false;
+    const untouchedCount = Math.max(detectedPII.length - replacements, 0);
+    setStatus(`Applied manual ${selectedAutoMode} to ${replacements} selection(s). ${untouchedCount} detected value(s) were left unchanged by choice.`, "success");
+  }
+  function matchSignature(match) {
+    return `${match.key}::${match.value}`;
+  }
+  function buildManualCandidates(matches) {
+    const bySignature = /* @__PURE__ */ new Map();
+    const ordered = [...matches].sort((a, b) => a.index - b.index);
+    return ordered.map((match) => {
+      const signature = matchSignature(match);
+      const occurrence = (bySignature.get(signature) ?? 0) + 1;
+      bySignature.set(signature, occurrence);
+      const id = `${signature}::${occurrence}`;
+      return {
+        id,
+        match,
+        signature,
+        occurrence
+      };
+    });
+  }
+  function buildSelectedOccurrences(selectedCandidates) {
+    const selected = /* @__PURE__ */ new Map();
+    for (const candidate of selectedCandidates) {
+      const existing = selected.get(candidate.signature) ?? /* @__PURE__ */ new Set();
+      existing.add(candidate.occurrence);
+      selected.set(candidate.signature, existing);
+    }
+    return selected;
+  }
+  function shortValue(value) {
+    if (value.length <= 38) {
+      return value;
+    }
+    return `${value.slice(0, 35)}\u2026`;
+  }
+  function renderManualPreview() {
+    if (!currentFileContent || !selectedManualMode || fileType === "docx") {
+      return;
+    }
+    const ordered = [...manualCandidates].sort((a, b) => a.match.index - b.match.index);
+    let cursor = 0;
+    let html = "";
+    for (const candidate of ordered) {
+      const match = candidate.match;
+      if (match.index < cursor) {
+        continue;
+      }
+      const id = candidate.id;
+      html += escapeHtml(currentFileContent.slice(cursor, match.index));
+      const classes = manualSelection.has(id) ? "manual-hit manual-selected" : "manual-hit";
+      html += `<mark class="${classes}" data-manual-id="${id}" title="${escapeHtml(match.type)}">${escapeHtml(match.value)}</mark>`;
+      cursor = match.index + match.length;
+    }
+    html += escapeHtml(currentFileContent.slice(cursor));
+    originalPreview.classList.remove("docx-layout");
+    originalPreview.innerHTML = `<pre>${html}</pre>`;
+  }
+  function applyManualMode(mode) {
+    if (!currentFileContent) {
+      setStatus("Upload a supported file to use manual mode.", "warning");
+      manualModeRadios.forEach((radio) => {
+        radio.checked = false;
+      });
+      selectedManualMode = "";
+      manualCleanBtn.disabled = true;
+      updateManualReviewUi();
+      updateManualHelperText();
+      return;
+    }
+    selectedManualMode = mode;
+    if (mode === "highlight") {
+      manualSelection = new Map(manualCandidates.map((candidate) => [candidate.id, candidate]));
+    }
+    if (mode === "select") {
+      manualSelection = /* @__PURE__ */ new Map();
+    }
+    updateManualReviewUi();
+    renderManualPreview();
+    updateManualHelperText();
+    setStatus(`Manual ${mode} mode is active. Toggle highlighted values, then click Apply Selection.`, "success");
+  }
+  function toggleManualSelection(id, selected) {
+    const candidate = manualCandidates.find((item) => item.id === id);
+    if (!candidate) {
+      return;
+    }
+    if (selected) {
+      manualSelection.set(id, candidate);
+    } else {
+      manualSelection.delete(id);
+    }
+    updateManualReviewUi();
+    renderManualPreview();
+  }
+  function updateManualReviewUi() {
+    if (detectedPII.length === 0) {
+      manualSummary.textContent = "No detected values found in this file.";
+      manualList.innerHTML = "";
+      manualCleanBtn.disabled = true;
+      return;
+    }
+    const selectedCount = manualSelection.size;
+    manualSummary.textContent = `${selectedCount} selected of ${manualCandidates.length} detected.`;
+    manualList.innerHTML = manualCandidates.map((candidate) => {
+      const { match, id } = candidate;
+      const checked = manualSelection.has(id) ? "checked" : "";
+      const label = `${match.type}: ${shortValue(match.value)}`;
+      return `<label class="manual-item"><input type="checkbox" data-manual-id="${id}" ${checked}><span class="manual-item-text">${escapeHtml(label)}</span></label>`;
+    }).join("");
+    manualCleanBtn.disabled = !selectedManualMode || selectedCount === 0;
+  }
+  function updateManualHelperText(message) {
+    if (message) {
+      manualHelperText.textContent = message;
+      return;
+    }
+    if (fileType === "docx") {
+      manualHelperText.textContent = "Manual mode for DOCX works from the review list and applies selected items while preserving format.";
+      return;
+    }
+    if (!selectedManualMode) {
+      manualHelperText.textContent = `Manual mode uses the current Auto action (${selectedAutoMode}). Choose Select or Highlight to begin.`;
+      return;
+    }
+    manualHelperText.textContent = `Manual ${selectedManualMode} mode active. Applying selections will use ${selectedAutoMode}.`;
   }
   function downloadSanitizedFile() {
     if (!sanitizedContent && !sanitizedBlob) {

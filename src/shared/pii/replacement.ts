@@ -67,6 +67,27 @@ function replaceByCharacterClass(template: string, random: RandomFn): string {
   return result;
 }
 
+function buildPronounceableWord(length: number, random: RandomFn, uppercaseFirst: boolean): string {
+  const vowels = ['a', 'e', 'i', 'o', 'u'];
+  const consonants = ['b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'n', 'p', 'r', 's', 't', 'v', 'w', 'y', 'z'];
+
+  if (length <= 0) {
+    return '';
+  }
+
+  let output = '';
+  for (let index = 0; index < length; index += 1) {
+    const source = index % 2 === 0 ? consonants : vowels;
+    const letter = pickFrom(random, source);
+    output += letter;
+  }
+
+  if (uppercaseFirst) {
+    return `${output[0]?.toUpperCase() ?? 'X'}${output.slice(1)}`;
+  }
+  return output;
+}
+
 function enforceLength(value: string, source: string, random: RandomFn): string {
   if (value.length === source.length) {
     return value;
@@ -181,33 +202,26 @@ function replaceEmail(value: string, random: RandomFn): string {
     return replaceByCharacterClass(value, random);
   }
 
-  const localLength = atIndex;
-  const domainLength = dotIndex - atIndex - 1;
-  const tldLength = value.length - dotIndex - 1;
+  const local = value.slice(0, atIndex);
+  const domain = value.slice(atIndex + 1, dotIndex);
+  const tld = value.slice(dotIndex + 1);
 
-  const localWords = ['anon', 'safe', 'mask', 'proxy', 'user', 'token'];
-  const domainWords = ['example', 'sandbox', 'placeholder', 'redacted', 'privacy'];
-  const tldWords = ['invalid', 'test', 'safe', 'mask'];
+  const transformSegment = (segment: string): string => {
+    const tokens = segment.match(/[A-Za-z]+|\d+|[^A-Za-z\d]+/g) ?? [segment];
+    return tokens
+      .map((token) => {
+        if (/^[A-Za-z]+$/.test(token)) {
+          return buildPronounceableWord(token.length, random, false);
+        }
+        if (/^\d+$/.test(token)) {
+          return token.split('').map(() => randomDigit(random)).join('');
+        }
+        return token;
+      })
+      .join('');
+  };
 
-  let local = pickFrom(random, localWords);
-  while (local.length < localLength) {
-    local += randomDigit(random);
-  }
-  local = local.slice(0, localLength);
-
-  let domain = pickFrom(random, domainWords);
-  while (domain.length < domainLength) {
-    domain += randomLetter(random, false);
-  }
-  domain = domain.slice(0, domainLength);
-
-  let tld = pickFrom(random, tldWords);
-  while (tld.length < tldLength) {
-    tld += randomLetter(random, false);
-  }
-  tld = tld.slice(0, tldLength);
-
-  return `${local}@${domain}.${tld}`;
+  return `${transformSegment(local)}@${transformSegment(domain)}.${transformSegment(tld)}`;
 }
 
 function replaceFinancialLike(value: string, random: RandomFn): string {
@@ -256,24 +270,6 @@ function replaceSsn(value: string, random: RandomFn): string {
 }
 
 function replaceName(value: string, random: RandomFn): string {
-  const firstNames = ['Avery', 'Jordan', 'Taylor', 'Riley', 'Morgan', 'Quinn', 'Parker', 'Rowan', 'Casey', 'Elliot'];
-  const lastNames = ['Harwood', 'Bennett', 'Caldwell', 'Whitaker', 'Sullivan', 'Montrose', 'Hawthorne', 'Bradford', 'Langford', 'Ellison'];
-
-  const buildWord = (length: number, uppercaseFirst: boolean, pool: string[]): string => {
-    let candidate = pickFrom(random, pool);
-    while (candidate.length < length) {
-      candidate += pickFrom(random, pool).toLowerCase();
-    }
-    candidate = candidate.slice(0, length);
-    if (length > 3) {
-      candidate = `${candidate.slice(0, length - 1)}x`;
-    }
-    if (uppercaseFirst) {
-      return `${candidate[0]?.toUpperCase() ?? 'X'}${candidate.slice(1).toLowerCase()}`;
-    }
-    return candidate.toLowerCase();
-  };
-
   return value
     .split(/(\s+)/)
     .map((part) => {
@@ -284,26 +280,55 @@ function replaceName(value: string, random: RandomFn): string {
         return 'X.';
       }
       const uppercaseFirst = /[A-Z]/.test(part[0] ?? '');
-      const useFirstPool = random() > 0.5;
-      return buildWord(part.length, uppercaseFirst, useFirstPool ? firstNames : lastNames);
+      return buildPronounceableWord(part.length, random, uppercaseFirst);
     })
     .join('');
 }
 
 function replaceStreetAddress(value: string, random: RandomFn): string {
-  const streetRoots = ['Maple', 'Willow', 'Cedar', 'Oak', 'Harbor', 'Pine', 'River', 'Summit', 'Lake', 'Elm'];
-  const streetSuffix = ['Street', 'Avenue', 'Road', 'Lane', 'Drive', 'Court', 'Boulevard'];
-  const cityNames = ['Springfield', 'Riverton', 'Fairview', 'Brookfield', 'Lakeside', 'Hillcrest', 'Woodland', 'Greendale'];
+  const tokens = value.match(/[A-Za-z]+|\d+|[^A-Za-z\d]+/g) ?? [value];
+  let alphaWordIndex = 0;
 
-  const number = String(randomInt(random, 100, 9899));
-  const street = `${pickFrom(random, streetRoots)} ${pickFrom(random, streetSuffix)}`;
-  const includeUnit = value.toLowerCase().includes('apt') || value.toLowerCase().includes('suite') || value.includes('#');
-  const unit = includeUnit ? `, Apt ${randomInt(random, 1, 999)}${randomLetter(random, true)}` : '';
-  const city = pickFrom(random, cityNames);
-  const state = 'ZZ';
-  const zip = `9${String(randomInt(random, 0, 9999)).padStart(4, '0')}`;
+  return tokens
+    .map((token) => {
+      if (/^\d+$/.test(token)) {
+        if (token.length >= 5) {
+          const generated = `9${String(randomInt(random, 0, 10 ** Math.max(1, token.length - 1) - 1)).padStart(Math.max(1, token.length - 1), '0')}`;
+          return generated.slice(0, token.length);
+        }
+        return token.split('').map(() => randomDigit(random)).join('');
+      }
 
-  return `${number} ${street}${unit}, ${city}, ${state} ${zip}`;
+      if (/^[A-Za-z]+$/.test(token)) {
+        const lower = token.toLowerCase();
+        if (token.length === 2 && token.toUpperCase() === token) {
+          return 'ZZ';
+        }
+        if (lower === 'apt') {
+          return 'Apt';
+        }
+        if (lower === 'suite' || lower === 'ste') {
+          return 'Suite'.slice(0, token.length);
+        }
+
+        const uppercaseFirst = /[A-Z]/.test(token[0] ?? '');
+        const replacement = buildPronounceableWord(token.length, random, uppercaseFirst);
+
+        alphaWordIndex += 1;
+        if (alphaWordIndex === 2 && token.length >= 3) {
+          const suffixes = ['St', 'Rd', 'Ave', 'Ln', 'Dr', 'Ct', 'Blvd'];
+          const suffix = pickFrom(random, suffixes);
+          return replacement.length <= suffix.length
+            ? replacement
+            : `${replacement.slice(0, replacement.length - suffix.length)}${suffix}`;
+        }
+
+        return replacement;
+      }
+
+      return token;
+    })
+    .join('');
 }
 
 function replaceDriversLicense(value: string): string {

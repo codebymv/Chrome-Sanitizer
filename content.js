@@ -234,25 +234,20 @@ class PrivacyShield {
       const shield = document.createElement('div');
       shield.id = 'privacy-shield-persistent';
       shield.className = 'privacy-shield-persistent blue';
+      const shieldIconUrl = chrome.runtime.getURL('icon_shield_white.png');
       shield.innerHTML = `
         <div class="shield-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="currentColor" stroke="currentColor" stroke-width="2"/>
-            <path class="shield-check" d="M9 12l2 2 4-4" stroke="white" stroke-width="2" stroke-linecap="round"/>
-          </svg>
+          <img src="${shieldIconUrl}" alt="Shield" width="18" height="18" style="object-fit:contain; display:block;">
         </div>
       `;
       
-      // Create wrench as separate element (not child of shield)
+      // Create soap icon as separate element (not child of shield)
       const wrench = document.createElement('div');
       wrench.id = 'shield-wrench-btn';
       wrench.className = 'shield-wrench';
-      wrench.title = 'Open File Sanitizer';
-      wrench.innerHTML = `
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-          <path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z" fill="currentColor"/>
-        </svg>
-      `;
+      wrench.title = 'Open Sani File Sanitizer';
+      const soapIconUrl = chrome.runtime.getURL('icon_soap_white.png');
+      wrench.innerHTML = `<img src="${soapIconUrl}" alt="Sani" width="16" height="16" style="object-fit:contain; display:block;">`;
       
       document.body.appendChild(shield);
       document.body.appendChild(wrench);
@@ -517,7 +512,7 @@ class PrivacyShield {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="white" stroke="white" stroke-width="2"/>
           </svg>
-          PII Detections
+          Sani — PII Detections
         </h3>
         <button class="clear-all">Clear All</button>
       </div>
@@ -533,14 +528,14 @@ class PrivacyShield {
         <h3>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="white" stroke="white" stroke-width="2"/>
-            <path d="M9 12l2 2 4-4" stroke="#10b981" stroke-width="2" stroke-linecap="round"/>
+            <path d="M9 12l2 2 4-4" stroke="#059669" stroke-width="2" stroke-linecap="round"/>
           </svg>
-          AI Input Sanitization
+          Sani
         </h3>
       </div>
       <div class="panel-content no-detections">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
-          <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="#10b981" stroke="#10b981" stroke-width="2"/>
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="#059669" stroke="#059669" stroke-width="2"/>
           <path d="M9 12l2 2 4-4" stroke="white" stroke-width="2" stroke-linecap="round"/>
         </svg>
         <p>No Sensitive Information Detected</p>
@@ -690,11 +685,20 @@ class PrivacyShield {
   async scanFile(file) {
     this.sessionStats.filesScanned++;
 
-    // Only scan text-based files
-    const textTypes = ['text/', 'application/json', 'application/xml', '.txt', '.csv', '.md', '.doc', '.docx'];
-    const isTextFile = textTypes.some(type => 
-      file.type.includes(type) || file.name.toLowerCase().endsWith(type.replace('application/', '.'))
-    );
+    const fileName = file.name.toLowerCase();
+    const textExtensions = ['.txt', '.csv', '.tsv', '.md', '.json', '.xml', '.log', '.html', '.htm'];
+    const supportedTextMime = ['text/', 'application/json', 'application/xml'];
+    const isTextFile =
+      supportedTextMime.some((type) => file.type.includes(type)) ||
+      textExtensions.some((ext) => fileName.endsWith(ext));
+
+    if (fileName.endsWith('.docx') || fileName.endsWith('.pdf')) {
+      this.showNotification(
+        `File uploaded: ${file.name}. Deep decoding for DOCX/PDF is available in the File Sanitizer tool.`,
+        'info'
+      );
+      return;
+    }
 
     if (!isTextFile) {
       // Show notification for non-text files
@@ -876,7 +880,7 @@ class PrivacyShield {
       <div class="privacy-shield-alert-content" data-severity="${severity}">
         <div class="privacy-shield-alert-header">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="${severity === 'critical' ? '#ef4444' : '#f59e0b'}" stroke="${severity === 'critical' ? '#ef4444' : '#f59e0b'}" stroke-width="2"/>
+            <path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z" fill="${severity === 'critical' ? '#DC2626' : '#D97706'}" stroke="${severity === 'critical' ? '#DC2626' : '#D97706'}" stroke-width="2"/>
             <text x="12" y="16" text-anchor="middle" fill="white" font-size="14" font-weight="bold">!</text>
           </svg>
           <h3>Personally Identifiable Information Detected</h3>

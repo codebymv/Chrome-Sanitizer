@@ -1,0 +1,463 @@
+/* AI Privacy Shield — Content-Script Overlay Styles
+   Design System: Luxury Minimal (Light)
+   Fonts: DM Sans / DM Mono (loaded via Google Fonts in popup & sanitizer)
+   NOTE: Content scripts cannot load external fonts, so we fall back to system fonts.
+*/
+
+/* ─── Tokens ────────────────────────────────────────────── */
+:root {
+  --ps-surface: #FFFFFF;
+  --ps-surface-raised: #FFFFFF;
+  --ps-surface-sunken: #F2F1EE;
+  --ps-border: #E8E6E1;
+  --ps-text-primary: #1A1A1A;
+  --ps-text-secondary: #6B6966;
+  --ps-text-tertiary: #9C9A97;
+  --ps-accent: #0D9488;
+  --ps-accent-hover: #0F766E;
+  --ps-accent-subtle: rgba(13, 148, 136, 0.08);
+  --ps-success: #059669;
+  --ps-success-bg: #ECFDF5;
+  --ps-danger: #DC2626;
+  --ps-danger-bg: #FEF2F2;
+  --ps-warning: #D97706;
+  --ps-warning-bg: #FFFBEB;
+  --ps-info: #2563EB;
+  --ps-info-bg: #EFF6FF;
+  --ps-neutral: #6B7280;
+  --ps-neutral-bg: #F9FAFB;
+  --ps-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ps-font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+  --ps-radius-sm: 6px;
+  --ps-radius-md: 10px;
+  --ps-radius-lg: 14px;
+  --ps-shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --ps-shadow-md: 0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --ps-shadow-lg: 0 8px 24px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.04);
+  --ps-z-badge: 2147483640;
+  --ps-z-wrench: 2147483641;
+  --ps-z-panel: 2147483642;
+  --ps-z-alert: 2147483643;
+  --ps-transition: 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Shield Badge ──────────────────────────────────────── */
+.privacy-shield-persistent {
+  position: fixed;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--ps-accent);
+  box-shadow: var(--ps-shadow-md);
+  cursor: grab;
+  z-index: var(--ps-z-badge);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s ease;
+  border: none;
+  user-select: none;
+}
+
+.privacy-shield-persistent:active {
+  cursor: grabbing;
+}
+
+.privacy-shield-persistent:hover {
+  transform: translateY(-50%) scale(1.12);
+  box-shadow: 0 3px 12px rgba(13, 148, 136, 0.4);
+}
+
+/* Shield state colours */
+.privacy-shield-persistent.blue {
+  background: var(--ps-accent);
+}
+
+.privacy-shield-persistent.green {
+  background: var(--ps-success);
+}
+
+.privacy-shield-persistent.red {
+  background: var(--ps-danger);
+  animation: ps-pulse 2s infinite;
+}
+
+@keyframes ps-pulse {
+  0%, 100% { box-shadow: var(--ps-shadow-md); }
+  50% { box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35), 0 0 12px rgba(220, 38, 38, 0.2); }
+}
+
+/* ─── Soap / Sanitizer Button ───────────────────────────── */
+.shield-wrench {
+  position: fixed;
+  right: 20px;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin-top: -35px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--ps-accent);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer !important;
+  transition: all var(--ps-transition);
+  box-shadow: var(--ps-shadow-sm);
+  color: white;
+  z-index: var(--ps-z-wrench);
+  opacity: 1;
+  pointer-events: auto !important;
+  overflow: hidden;
+}
+
+.shield-wrench:hover {
+  transform: translate(-50%, -50%) scale(1.15);
+  background: var(--ps-accent-hover);
+  box-shadow: 0 3px 10px rgba(13, 148, 136, 0.4);
+}
+
+.shield-wrench:active {
+  transform: translate(-50%, -50%) scale(1.05);
+}
+
+/* ─── Panel ─────────────────────────────────────────────── */
+.privacy-shield-panel {
+  position: fixed;
+  right: 60px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 260px;
+  max-height: 400px;
+  background: var(--ps-surface);
+  border-radius: var(--ps-radius-lg);
+  box-shadow: var(--ps-shadow-lg);
+  z-index: var(--ps-z-panel);
+  overflow: hidden;
+  animation: ps-slideIn 0.25s ease-out;
+  font-family: var(--ps-font);
+  font-size: 12px;
+  border: 1px solid var(--ps-border);
+}
+
+@keyframes ps-slideIn {
+  from { opacity: 0; transform: translateY(-50%) translateX(30px); }
+  to   { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
+/* Panel header */
+.panel-header {
+  background: var(--ps-success);
+  color: white;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-header.has-detections {
+  background: var(--ps-danger);
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--ps-font);
+}
+
+.panel-header h3 svg { width: 16px; height: 16px; }
+
+/* Panel content */
+.panel-content {
+  padding: 12px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.panel-content.no-detections {
+  text-align: center;
+  padding: 28px 16px;
+}
+
+.no-detections svg {
+  margin-bottom: 10px;
+  width: 44px;
+  height: 44px;
+}
+
+.no-detections p {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ps-success);
+  line-height: 1.4;
+}
+
+.no-detections small {
+  color: var(--ps-text-tertiary);
+  font-size: 11px;
+}
+
+/* Detection entries */
+.detection-entry {
+  margin-bottom: 8px;
+  padding: 10px;
+  background: var(--ps-surface-raised);
+  border-radius: var(--ps-radius-sm);
+  border-left: 3px solid var(--ps-danger);
+  border-top: 1px solid var(--ps-border);
+  border-right: 1px solid var(--ps-border);
+  border-bottom: 1px solid var(--ps-border);
+}
+
+.detection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.detection-time {
+  font-size: 9px;
+  color: var(--ps-text-tertiary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.clear-single {
+  background: var(--ps-danger);
+  color: white;
+  border: none;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 9px;
+  cursor: pointer;
+  transition: background var(--ps-transition);
+  font-weight: 600;
+  font-family: var(--ps-font);
+}
+
+.clear-single:hover { background: var(--ps-accent-hover); }
+
+.clear-all {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background var(--ps-transition);
+  font-family: var(--ps-font);
+}
+
+.clear-all:hover { background: rgba(255, 255, 255, 0.35); }
+
+/* Detection items list */
+.detection-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.detection-items li {
+  font-size: 10px;
+  color: var(--ps-text-secondary);
+  margin: 4px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  flex-wrap: wrap;
+  line-height: 1.5;
+}
+
+.detection-items code {
+  background: var(--ps-surface-sunken);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-family: var(--ps-font-mono);
+  color: var(--ps-text-primary);
+  word-break: break-all;
+  max-width: 100%;
+  display: inline-block;
+}
+
+/* ─── Severity Badges (shared across panel & alert) ─────── */
+.severity-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--ps-font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.severity-badge.severity-critical {
+  background: var(--ps-danger-bg);
+  color: var(--ps-danger);
+}
+
+.severity-badge.severity-high {
+  background: var(--ps-warning-bg);
+  color: var(--ps-warning);
+}
+
+.severity-badge.severity-medium {
+  background: var(--ps-info-bg);
+  color: var(--ps-info);
+}
+
+.severity-badge.severity-low {
+  background: var(--ps-neutral-bg);
+  color: var(--ps-neutral);
+}
+
+/* ─── Alert Toast ───────────────────────────────────────── */
+.privacy-shield-alert {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: var(--ps-z-alert);
+  animation: ps-slideInRight 0.35s ease-out;
+  max-width: 420px;
+  font-family: var(--ps-font);
+}
+
+@keyframes ps-slideInRight {
+  from { opacity: 0; transform: translateX(80px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.privacy-shield-alert-content {
+  background: var(--ps-surface);
+  border-radius: var(--ps-radius-lg);
+  box-shadow: var(--ps-shadow-lg);
+  padding: 20px;
+  border: 2px solid var(--ps-warning);
+}
+
+.privacy-shield-alert-content[data-severity="critical"] {
+  border-color: var(--ps-danger);
+}
+
+.privacy-shield-alert-content[data-severity="high"] {
+  border-color: var(--ps-warning);
+}
+
+.privacy-shield-alert-content[data-severity="medium"] {
+  border-color: var(--ps-info);
+}
+
+/* Alert header */
+.privacy-shield-alert-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.privacy-shield-alert-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ps-text-primary);
+  font-family: var(--ps-font);
+  letter-spacing: -0.3px;
+}
+
+.privacy-shield-alert-content p {
+  margin: 0 0 10px 0;
+  color: var(--ps-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Alert PII list */
+.privacy-shield-alert .pii-list {
+  margin: 0 0 14px 0;
+  padding-left: 20px;
+  color: var(--ps-text-primary);
+  font-size: 13px;
+  list-style: none;
+}
+
+.privacy-shield-alert .pii-list li {
+  margin: 8px 0;
+  position: relative;
+  padding-left: 8px;
+}
+
+.privacy-shield-alert .pii-list li:before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 7px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ps-accent);
+}
+
+.privacy-shield-alert .pii-list code {
+  background: var(--ps-surface-sunken);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  color: var(--ps-text-primary);
+  display: inline-block;
+  margin-top: 3px;
+}
+
+/* Alert actions */
+.alert-actions {
+  border-top: 1px solid var(--ps-border);
+  padding-top: 14px;
+  margin-top: 14px;
+}
+
+.warning-text {
+  background: var(--ps-warning-bg);
+  border: 1px solid rgba(217, 119, 6, 0.2);
+  border-radius: var(--ps-radius-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--ps-warning);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.privacy-shield-close {
+  background: var(--ps-accent);
+  color: white;
+  border: none;
+  border-radius: var(--ps-radius-md);
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  transition: all var(--ps-transition);
+  font-family: var(--ps-font);
+}
+
+.privacy-shield-close:hover {
+  background: var(--ps-accent-hover);
+  box-shadow: 0 2px 6px rgba(13, 148, 136, 0.25);
+}
+
+.privacy-shield-close:active {
+  transform: translateY(0);
+}

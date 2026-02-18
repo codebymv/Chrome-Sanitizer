@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>File Sanitizer — Sani</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --color-surface: #FAFAF8;
+      --color-surface-raised: #FFFFFF;
+      --color-surface-sunken: #F2F1EE;
+      --color-border: #E8E6E1;
+      --color-border-subtle: #F0EEEA;
+      --color-text-primary: #1A1A1A;
+      --color-text-secondary: #6B6966;
+      --color-text-tertiary: #9C9A97;
+      --color-accent: #0D9488;
+      --color-accent-hover: #0F766E;
+      --color-accent-subtle: rgba(13, 148, 136, 0.08);
+      --color-accent-tint: rgba(13, 148, 136, 0.12);
+      --color-success: #059669;
+      --color-success-bg: #ECFDF5;
+      --color-danger: #DC2626;
+      --color-danger-bg: #FEF2F2;
+      --color-severity-critical: #DC2626;
+      --color-severity-critical-bg: #FEF2F2;
+      --color-severity-high: #D97706;
+      --color-severity-high-bg: #FFFBEB;
+      --color-severity-medium: #2563EB;
+      --color-severity-medium-bg: #EFF6FF;
+      --color-severity-low: #6B7280;
+      --color-severity-low-bg: #F9FAFB;
+      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'DM Mono', 'JetBrains Mono', ui-monospace, monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.04);
+      --transition-fast: 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--color-surface);
+      min-height: 100vh;
+      overflow: auto;
+      color: var(--color-text-primary);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── Upload Zone ────────────────────────────────────── */
+    .upload-zone {
+      position: fixed;
+      inset: 0;
+      background: var(--color-surface);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      z-index: 1000;
+    }
+
+    .upload-zone-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 48px 64px;
+      border: 2px dashed var(--color-border);
+      border-radius: var(--radius-lg);
+      transition: all 0.25s ease;
+    }
+
+    .upload-zone:hover .upload-zone-inner,
+    .upload-zone.dragover .upload-zone-inner {
+      border-color: var(--color-accent);
+      background: var(--color-accent-subtle);
+    }
+
+    .upload-zone.hidden { display: none; }
+
+    .upload-icon {
+      width: 56px;
+      height: 56px;
+      background: var(--color-accent-subtle);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .upload-zone h2 {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--color-text-primary);
+      letter-spacing: -0.4px;
+    }
+
+    .upload-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .upload-title-icon {
+      object-fit: contain;
+    }
+
+    .upload-zone p {
+      color: var(--color-text-tertiary);
+      font-size: 13px;
+      text-align: center;
+      max-width: 400px;
+    }
+
+    .file-input { display: none !important; }
+
+    /* ─── Main Container ─────────────────────────────────── */
+    .main-container {
+      display: none;
+      padding: 16px;
+      max-width: 100%;
+      margin: 0 auto;
+    }
+
+    .main-container.active { display: block; }
+
+    /* ─── Controls Panel ─────────────────────────────────── */
+    .controls-panel {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .control-field {
+      flex: 1;
+      background: var(--color-surface-raised);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .field-header {
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-tertiary);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--color-border);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .field-options { margin-bottom: 16px; }
+
+    .option-body {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .option-help {
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      line-height: 1.4;
+    }
+
+    .radio-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      transition: all var(--transition-fast);
+    }
+
+    .radio-option:hover { background: var(--color-accent-subtle); }
+
+    .radio-option input[type="radio"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: var(--color-accent);
+    }
+
+    .radio-option label {
+      font-size: 13px;
+      color: var(--color-text-primary);
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .clean-button {
+      background: var(--color-accent);
+      color: white;
+      border: none;
+      padding: 8px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      float: right;
+      transition: all var(--transition-fast);
+      font-family: var(--font-body);
+    }
+
+    .clean-button:hover:not(:disabled) {
+      background: var(--color-accent-hover);
+    }
+
+    .clean-button:disabled {
+      background: var(--color-border);
+      color: var(--color-text-tertiary);
+      cursor: not-allowed;
+    }
+
+    .clean-button:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+
+    .manual-helper {
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+
+    .manual-review {
+      border: 1px solid var(--color-border-subtle);
+      background: var(--color-surface-sunken);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+      margin-bottom: 10px;
+      max-height: 160px;
+      overflow: auto;
+    }
+
+    .manual-summary {
+      font-size: 11px;
+      color: var(--color-text-secondary);
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    .manual-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .manual-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--color-text-primary);
+      padding: 4px 6px;
+      border-radius: var(--radius-sm);
+    }
+
+    .manual-item:hover {
+      background: var(--color-accent-subtle);
+    }
+
+    .manual-item input[type="checkbox"] {
+      width: 13px;
+      height: 13px;
+      accent-color: var(--color-accent);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .manual-item-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .manual-hit {
+      background: var(--color-accent-subtle);
+      border-bottom: 1px dashed var(--color-accent);
+      cursor: pointer;
+      transition: background var(--transition-fast);
+    }
+
+    .manual-hit.manual-selected {
+      background: var(--color-accent-tint);
+    }
+
+    .manual-hit:hover {
+      background: var(--color-accent-tint);
+    }
+
+    .manual-selection-popup {
+      position: fixed;
+      z-index: 2000;
+      display: none;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-surface-raised);
+      box-shadow: var(--shadow-md);
+    }
+
+    .manual-selection-popup.visible {
+      display: flex;
+    }
+
+    .manual-popup-btn {
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text-primary);
+      border-radius: var(--radius-sm);
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body);
+      transition: all var(--transition-fast);
+    }
+
+    .manual-popup-btn:hover {
+      border-color: var(--color-accent);
+      background: var(--color-accent-subtle);
+    }
+
+    .manual-popup-btn.hide {
+      color: var(--color-text-primary);
+    }
+
+    .manual-popup-btn.replace {
+      color: var(--color-accent-hover);
+    }
+
+    /* ─── Preview ────────────────────────────────────────── */
+    .preview-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .preview-section {
+      background: var(--color-surface-raised);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .preview-header {
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-tertiary);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 41px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .header-buttons {
+      display: flex;
+      gap: 6px;
+    }
+
+    .header-buttons.placeholder {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .icon-button {
+      background: transparent;
+      border: 1px solid var(--color-border);
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition-fast);
+      color: var(--color-text-tertiary);
+    }
+
+    .icon-button:hover {
+      background: var(--color-accent-subtle);
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+    }
+
+    .icon-button.trash:hover {
+      background: var(--color-danger-bg);
+      border-color: var(--color-danger);
+      color: var(--color-danger);
+    }
+
+    .icon-button:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+
+    .button-icon {
+      width: 16px;
+      height: 16px;
+    }
+
+    .preview-content {
+      position: relative;
+      min-height: 520px;
+      max-height: calc(100vh - 280px);
+      overflow: auto;
+      background: var(--color-surface-sunken);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      border: 1px solid var(--color-border-subtle);
+    }
+
+    .preview-content::-webkit-scrollbar { width: 6px; }
+    .preview-content::-webkit-scrollbar-track {
+      background: var(--color-surface-sunken);
+      border-radius: 3px;
+    }
+    .preview-content::-webkit-scrollbar-thumb {
+      background: var(--color-border);
+      border-radius: 3px;
+    }
+    .preview-content::-webkit-scrollbar-thumb:hover {
+      background: var(--color-text-tertiary);
+    }
+
+    .preview-content pre {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--color-text-primary);
+      margin: 0;
+      user-select: text;
+    }
+
+    .preview-content img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      border-radius: var(--radius-sm);
+    }
+
+    .preview-content table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .preview-content th,
+    .preview-content td {
+      border: 1px solid var(--color-border);
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 12px;
+    }
+
+    .preview-content th {
+      background: var(--color-surface-sunken);
+      font-weight: 600;
+      color: var(--color-text-primary);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .preview-content td { color: var(--color-text-secondary); }
+
+    .preview-content.docx-layout {
+      padding: 12px;
+      background: #EDEBE7;
+    }
+
+    .docx-preview-host {
+      width: 100%;
+      min-height: 120px;
+    }
+
+    .docx-preview-host .docx-wrapper {
+      background: #EDEBE7;
+      padding: 0;
+    }
+
+    .docx-preview-host .docx {
+      color: #1A1A1A;
+      margin: 0 auto;
+      box-shadow: var(--shadow-sm);
+      border-radius: 2px;
+    }
+
+    /* ─── Download Button ────────────────────────────────── */
+    .download-button {
+      background: var(--color-accent);
+      color: white;
+      border: none;
+      padding: 10px 24px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 14px;
+      transition: all var(--transition-fast);
+      display: block;
+      width: 100%;
+      font-family: var(--font-body);
+    }
+
+    .download-button:hover:not(:disabled) {
+      background: var(--color-accent-hover);
+    }
+
+    .download-button:disabled {
+      background: var(--color-border);
+      color: var(--color-text-tertiary);
+      cursor: not-allowed;
+    }
+
+    .download-button:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+
+    .status-banner {
+      display: none;
+      margin-bottom: 12px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--color-border);
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.5;
+      background: var(--color-surface-raised);
+      color: var(--color-text-secondary);
+    }
+
+    .status-banner.visible {
+      display: block;
+    }
+
+    .status-banner.success {
+      background: var(--color-success-bg);
+      border-color: rgba(5, 150, 105, 0.2);
+      color: var(--color-success);
+    }
+
+    .status-banner.warning {
+      background: var(--color-severity-high-bg);
+      border-color: rgba(217, 119, 6, 0.2);
+      color: var(--color-severity-high);
+    }
+
+    .status-banner.error {
+      background: var(--color-danger-bg);
+      border-color: rgba(220, 38, 38, 0.2);
+      color: var(--color-danger);
+    }
+
+    .upload-mode {
+      width: 100%;
+      max-width: 420px;
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    .upload-mode-title {
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .upload-mode-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .upload-mode-btn {
+      flex: 1;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-surface-raised);
+      color: var(--color-text-secondary);
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      font-family: var(--font-body);
+    }
+
+    .upload-mode-btn.active {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+      background: var(--color-accent-subtle);
+    }
+
+    .upload-mode-help {
+      text-align: center;
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      line-height: 1.5;
+    }
+
+    .upload-auto-run {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .upload-auto-run input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--color-accent);
+      cursor: pointer;
+    }
+
+    /* ─── Severity Badges ────────────────────────────────── */
+    .severity-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .severity-badge.severity-critical {
+      background: var(--color-severity-critical-bg);
+      color: var(--color-severity-critical);
+    }
+    .severity-badge.severity-high {
+      background: var(--color-severity-high-bg);
+      color: var(--color-severity-high);
+    }
+    .severity-badge.severity-medium {
+      background: var(--color-severity-medium-bg);
+      color: var(--color-severity-medium);
+    }
+    .severity-badge.severity-low {
+      background: var(--color-severity-low-bg);
+      color: var(--color-severity-low);
+    }
+  </style>
+</head>
+<body>
+  <div class="upload-zone" id="uploadZone">
+    <div class="upload-zone-inner">
+      <div class="upload-icon" role="img" aria-label="Upload file">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="17 8 12 3 7 8" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="12" y1="3" x2="12" y2="15" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="upload-title-row">
+        <img src="sani_icon.png" alt="Sani" class="upload-title-icon" width="32" height="32">
+        <h2>File Sanitizer</h2>
+      </div>
+      <p>Upload files to detect and remove PII &middot; Max 10 MB</p>
+      <div class="upload-mode">
+        <div class="upload-mode-title">Default Mode</div>
+        <div class="upload-mode-row">
+          <button type="button" class="upload-mode-btn" id="preModeHide" data-mode="hide">Hide</button>
+          <button type="button" class="upload-mode-btn" id="preModeReplace" data-mode="replace">Replace</button>
+        </div>
+        <label class="upload-auto-run" id="preAutoRunRow">
+          <input type="checkbox" id="preAutoRunToggle" checked>
+          <span>Auto-sanitize on upload</span>
+        </label>
+        <div class="upload-mode-help" id="preModeHelp">Hide masks sensitive values with blocks. Applied automatically after upload.</div>
+      </div>
+    </div>
+    <input type="file" id="fileInput" class="file-input" aria-label="Select file to sanitize">
+  </div>
+
+  <div class="main-container" id="mainContainer">
+    <div class="status-banner" id="statusBanner" role="status" aria-live="polite"></div>
+    <div class="controls-panel">
+      <div class="control-field">
+        <div class="field-header">Auto</div>
+        <div class="field-options">
+          <div class="radio-option">
+            <input type="radio" id="autoHide" name="autoMode" value="hide">
+            <div class="option-body">
+              <label for="autoHide">Hide</label>
+              <div class="option-help">Masks sensitive values with blocks to remove readable content.</div>
+            </div>
+          </div>
+          <div class="radio-option">
+            <input type="radio" id="autoReplace" name="autoMode" value="replace">
+            <div class="option-body">
+              <label for="autoReplace">Replace</label>
+              <div class="option-help">Swaps sensitive values with realistic synthetic placeholders.</div>
+            </div>
+          </div>
+        </div>
+        <button class="clean-button" id="autoCleanBtn" disabled>Re-run</button>
+      </div>
+
+      <div class="control-field">
+        <div class="field-header">Manual</div>
+        <div class="manual-helper" id="manualHelperText">Select a manual mode to review detected sensitive values.</div>
+        <div class="manual-review" id="manualReviewPanel">
+          <div class="manual-summary" id="manualSummary">No detected values loaded yet.</div>
+          <div class="manual-list" id="manualList"></div>
+        </div>
+        <div class="field-options">
+          <div class="radio-option">
+            <input type="radio" id="manualSelect" name="manualMode" value="select">
+            <div class="option-body">
+              <label for="manualSelect">Select</label>
+              <div class="option-help">Choose specific sensitive values to sanitize.</div>
+            </div>
+          </div>
+          <div class="radio-option">
+            <input type="radio" id="manualHighlight" name="manualMode" value="highlight">
+            <div class="option-body">
+              <label for="manualHighlight">Highlight</label>
+              <div class="option-help">Preselect all detected values, then deselect any you want to keep.</div>
+            </div>
+          </div>
+        </div>
+        <button class="clean-button" id="manualCleanBtn" disabled>Apply Selection</button>
+      </div>
+    </div>
+
+    <div class="preview-container">
+      <div class="preview-section">
+        <div class="preview-header">
+          <span>Original</span>
+          <div class="header-buttons">
+            <button class="icon-button reset" id="resetSelectionsBtn" title="Clear all selections" aria-label="Clear all selections">
+              <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 4v6h6M23 20v-6h-6"/>
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+              </svg>
+            </button>
+            <button class="icon-button trash" id="clearFileBtn" title="Clear file and start over" aria-label="Clear file and start over">
+              <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="preview-content" id="originalPreview"></div>
+      </div>
+
+      <div class="preview-section">
+        <div class="preview-header">
+          <span>Sanitized</span>
+          <div class="header-buttons placeholder" aria-hidden="true">
+            <span class="icon-button"></span>
+            <span class="icon-button"></span>
+          </div>
+        </div>
+        <div class="preview-content" id="sanitizedPreview"></div>
+        <button class="download-button" id="downloadBtn" disabled>Download Sanitized File</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="manual-selection-popup" id="manualSelectionPopup" role="dialog" aria-label="Selection actions">
+    <button type="button" class="manual-popup-btn hide" id="manualPopupHideBtn">Hide</button>
+    <button type="button" class="manual-popup-btn replace" id="manualPopupReplaceBtn">Replace</button>
+  </div>
+
+  <script src="sanitizer.js"></script>
+</body>
+</html>

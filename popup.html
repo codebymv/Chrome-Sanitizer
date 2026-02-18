@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --color-surface: #FAFAF8;
+      --color-surface-raised: #FFFFFF;
+      --color-surface-sunken: #F2F1EE;
+      --color-border: #E8E6E1;
+      --color-border-subtle: #F0EEEA;
+      --color-text-primary: #1A1A1A;
+      --color-text-secondary: #6B6966;
+      --color-text-tertiary: #9C9A97;
+      --color-accent: #0D9488;
+      --color-accent-hover: #0F766E;
+      --color-accent-subtle: rgba(13, 148, 136, 0.08);
+      --color-accent-tint: rgba(13, 148, 136, 0.12);
+      --color-success: #059669;
+      --color-success-bg: #ECFDF5;
+      --color-danger: #DC2626;
+      --color-danger-bg: #FEF2F2;
+      --color-severity-critical: #DC2626;
+      --color-severity-critical-bg: #FEF2F2;
+      --color-severity-high: #D97706;
+      --color-severity-high-bg: #FFFBEB;
+      --color-severity-medium: #2563EB;
+      --color-severity-medium-bg: #EFF6FF;
+      --color-severity-low: #6B7280;
+      --color-severity-low-bg: #F9FAFB;
+      --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'DM Mono', 'JetBrains Mono', ui-monospace, monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --transition-fast: 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 340px;
+      font-family: var(--font-body);
+      background: var(--color-surface);
+      color: var(--color-text-primary);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container { padding: 20px; }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .header-logo-icon {
+      display: block;
+      margin: 0 auto 8px;
+      object-fit: contain;
+    }
+
+    .header-logo-text {
+      display: block;
+      margin: 0 auto 4px;
+      object-fit: contain;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--color-text-primary);
+      letter-spacing: -0.4px;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: var(--color-text-tertiary);
+      margin-top: 4px;
+      font-weight: 400;
+    }
+
+    /* Status */
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      border-radius: var(--radius-sm);
+      letter-spacing: 0.1px;
+    }
+    .status .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status.active {
+      background: var(--color-success-bg);
+      color: var(--color-success);
+    }
+    .status.active .status-dot { background: var(--color-success); }
+    .status.inactive {
+      background: var(--color-danger-bg);
+      color: var(--color-danger);
+    }
+    .status.inactive .status-dot { background: var(--color-danger); }
+
+    /* Toggle */
+    .toggle-section {
+      background: var(--color-surface-raised);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      margin-bottom: 12px;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-sm);
+    }
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .toggle-label {
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 42px; height: 24px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: var(--color-border);
+      transition: var(--transition-fast);
+      border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px; width: 18px;
+      left: 3px; bottom: 3px;
+      background-color: white;
+      transition: var(--transition-fast);
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+    input:checked + .slider { background-color: var(--color-accent); }
+    input:checked + .slider:before { transform: translateX(18px); }
+    input:focus-visible + .slider {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+
+    /* Stats */
+    .stats {
+      background: var(--color-surface-raised);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 12px;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-sm);
+    }
+    .stats.history-stats {
+      background: var(--color-surface-sunken);
+      border-color: var(--color-border-subtle);
+      box-shadow: none;
+    }
+    .stats h3 {
+      margin: 0 0 12px 0;
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .stats h3 svg {
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 5px;
+      color: var(--color-text-tertiary);
+    }
+    .stat-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 6px 0;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+    }
+    .stat-value {
+      font-family: var(--font-mono);
+      font-weight: 500;
+      font-size: 12px;
+      color: var(--color-accent);
+      background: var(--color-accent-subtle);
+      padding: 2px 10px;
+      border-radius: var(--radius-sm);
+    }
+
+    /* Latest Detection */
+    .latest-detection {
+      background: var(--color-surface-raised);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 12px;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-sm);
+    }
+    .latest-detection h4 {
+      margin: 0 0 8px 0;
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .detection-list {
+      margin: 0; padding: 0; list-style: none;
+    }
+    .detection-list li {
+      margin: 5px 0;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Severity Badges */
+    .severity-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .severity-badge.severity-critical {
+      background: var(--color-severity-critical-bg);
+      color: var(--color-severity-critical);
+    }
+    .severity-badge.severity-high {
+      background: var(--color-severity-high-bg);
+      color: var(--color-severity-high);
+    }
+    .severity-badge.severity-medium {
+      background: var(--color-severity-medium-bg);
+      color: var(--color-severity-medium);
+    }
+    .severity-badge.severity-low {
+      background: var(--color-severity-low-bg);
+      color: var(--color-severity-low);
+    }
+
+    /* Stats Breakdown */
+    .stats-breakdown {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--color-border);
+    }
+    .stats-breakdown h4 {
+      margin: 0 0 6px 0;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .stats-breakdown ul {
+      margin: 0;
+      padding-left: 16px;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+    }
+    .stats-breakdown li { margin: 3px 0; }
+
+    /* Quick Actions */
+    .quick-actions {
+      background: var(--color-surface-raised);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 12px;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-sm);
+    }
+    .quick-actions h3 {
+      margin: 0 0 12px 0;
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .quick-actions h3 svg {
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 5px;
+      color: var(--color-text-tertiary);
+    }
+    .action-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .action-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-surface);
+      color: var(--color-text-primary);
+      cursor: pointer;
+      font-family: var(--font-body);
+      font-size: 13px;
+      font-weight: 500;
+      transition: var(--transition-fast);
+      text-align: left;
+    }
+    .action-btn:hover {
+      border-color: var(--color-accent);
+      background: var(--color-accent-subtle);
+    }
+    .action-btn:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+    .action-btn .action-icon {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-sm);
+      background: var(--color-accent-subtle);
+      color: var(--color-accent);
+      flex-shrink: 0;
+    }
+    .action-btn .action-label {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .action-btn .action-label small {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--color-text-tertiary);
+    }
+    .action-btn.danger {
+      color: var(--color-text-secondary);
+    }
+    .action-btn.danger .action-icon {
+      background: var(--color-danger-bg);
+      color: var(--color-danger);
+    }
+    .action-btn.danger:hover {
+      border-color: var(--color-danger);
+      background: var(--color-danger-bg);
+    }
+
+    /* Monitored Link */
+    .monitored-link {
+      display: block;
+      text-align: center;
+      color: var(--color-accent);
+      text-decoration: none;
+      padding: 12px;
+      background: var(--color-accent-subtle);
+      border-radius: var(--radius-md);
+      transition: var(--transition-fast);
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 13px;
+      border: 1px solid transparent;
+    }
+    .monitored-link:hover {
+      background: var(--color-accent-tint);
+      border-color: rgba(13, 148, 136, 0.15);
+    }
+    .monitored-link:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+
+    /* Monitored Info Page */
+    .back-button {
+      background: var(--color-surface-raised);
+      color: var(--color-text-primary);
+      border: 1px solid var(--color-border);
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 12px;
+      font-family: var(--font-body);
+      font-weight: 500;
+      transition: var(--transition-fast);
+      margin-bottom: 12px;
+    }
+    .back-button:hover { background: var(--color-surface-sunken); }
+    .back-button:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+    .monitored-page .header h1 { font-size: 16px; }
+    .monitored-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 380px;
+      overflow-y: auto;
+    }
+    .monitored-item-single {
+      background: var(--color-surface-raised);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-sm);
+    }
+    .monitored-header-single {
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .monitored-header-single h3 {
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--color-text-primary);
+      letter-spacing: -0.2px;
+    }
+    .pii-list {
+      margin: 0;
+      padding: 0 0 0 18px;
+      list-style: disc;
+    }
+    .pii-list li {
+      margin: 6px 0;
+      line-height: 1.5;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+    }
+    .pii-list li strong {
+      font-weight: 600;
+      color: var(--color-text-primary);
+    }
+    .info-note {
+      background: var(--color-surface-sunken);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      margin-top: 16px;
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--color-text-secondary);
+      border: 1px solid var(--color-border-subtle);
+    }
+    .info-note strong {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--color-text-primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <img src="sani_icon.png" alt="Sani" class="header-logo-icon" width="44" height="44">
+      <img src="sani_text.png" alt="Sani" class="header-logo-text" height="28">
+      <div class="subtitle">Detect PII in AI inputs</div>
+    </header>
+
+    <div class="status active" id="status">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span>Protection Active</span>
+    </div>
+
+    <div class="toggle-section">
+      <div class="toggle-row">
+        <span class="toggle-label">Enable Protection</span>
+        <label class="switch">
+          <input type="checkbox" id="enableToggle" checked aria-label="Toggle PII protection">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <main>
+      <div class="stats">
+        <h3>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.7"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.5"/>
+            <rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.8"/>
+            <rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.6"/>
+          </svg>
+          Session
+        </h3>
+        <div class="stat-item">
+          <span>PII Instances Found</span>
+          <span class="stat-value" id="redactedCount">0</span>
+        </div>
+        <div class="stat-item">
+          <span>Data Types Detected</span>
+          <span class="stat-value" id="protectedTypes">0 types</span>
+        </div>
+      </div>
+
+      <div class="stats history-stats">
+        <h3>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/>
+            <path d="M12 7v5l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          All-Time
+        </h3>
+        <div class="stat-item">
+          <span>Total PII Detected</span>
+          <span class="stat-value" id="historyCount">0</span>
+        </div>
+        <div class="stat-item">
+          <span>Total Types Found</span>
+          <span class="stat-value" id="historyTypes">0 types</span>
+        </div>
+      </div>
+
+      <div class="latest-detection" id="latestDetection" style="display: none;"></div>
+
+      <div class="quick-actions">
+        <h3>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M13 10V3L4 14h7v7l9-11h-7z" fill="currentColor" opacity="0.7"/>
+          </svg>
+          Quick Actions
+        </h3>
+        <div class="action-grid">
+          <button type="button" class="action-btn" id="openSanitizerBtn">
+            <span class="action-icon">
+              <img src="sani_icon.png" alt="" width="16" height="16" style="object-fit:contain">
+            </span>
+            <span class="action-label">
+              Open File Sanitizer
+              <small>Upload and clean files</small>
+            </span>
+          </button>
+          <button type="button" class="action-btn danger" id="clearSessionBtn">
+            <span class="action-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <polyline points="3 6 5 6 21 6" stroke="currentColor" stroke-width="2" fill="none"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" fill="none"/>
+              </svg>
+            </span>
+            <span class="action-label">
+              Clear Session Data
+              <small>Reset current page detections</small>
+            </span>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <nav>
+      <a href="#" class="monitored-link" id="monitoredLink">View Monitored Information</a>
+    </nav>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -12,7 +12,7 @@ import {
   PII_PATTERNS,
   createPdfRedactionEngine,
   detectMatches
-} from "./chunks/chunk-WDFGOKMK.js";
+} from "./chunks/chunk-GD7YHZ7W.js";
 import {
   escapeHtml,
   getExtension,
@@ -1989,7 +1989,7 @@ function csvToTable(csvText) {
 }
 async function decodeUploadedFileLazy(file) {
   if (!decodeUploadedFilePromise) {
-    decodeUploadedFilePromise = import("./chunks/registry-SWT7P3AI.js");
+    decodeUploadedFilePromise = import("./chunks/registry-XGQW6AW7.js");
   }
   const module = await decodeUploadedFilePromise;
   return module.decodeUploadedFile(file);

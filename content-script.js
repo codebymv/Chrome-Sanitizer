@@ -1,6 +1,29 @@
 "use strict";
 (() => {
   // src/shared/pii/detector.ts
+  var HEADER_LABELS = /* @__PURE__ */ new Set([
+    "full name",
+    "date of birth",
+    "ssn",
+    "phone",
+    "email",
+    "name",
+    "street address",
+    "city",
+    "state",
+    "zip",
+    "zip code",
+    "credit card number",
+    "expiry",
+    "cvv",
+    "bank account",
+    "medical record",
+    "medical record (sample)"
+  ]);
+  function isHeaderLikeMatch(value) {
+    const normalized = value.trim().toLowerCase();
+    return HEADER_LABELS.has(normalized);
+  }
   function detectMatches(text, patterns) {
     const matches = [];
     for (const pattern of patterns) {
@@ -8,6 +31,9 @@
       let match;
       while ((match = regex.exec(text)) !== null) {
         const value = match[0];
+        if (isHeaderLikeMatch(value)) {
+          continue;
+        }
         if (pattern.validate && !pattern.validate(value)) {
           continue;
         }

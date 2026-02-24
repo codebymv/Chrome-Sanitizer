@@ -1,6 +1,6 @@
 import {
   createPdfRedactionEngine
-} from "./chunks/chunk-WDFGOKMK.js";
+} from "./chunks/chunk-GD7YHZ7W.js";
 import "./chunks/chunk-KH45J4DC.js";
 
 // src/shared/file/redaction/pdf/worker.ts

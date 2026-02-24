@@ -39,11 +39,13 @@ class PrivacyShield {
 		chrome.storage.sync.get(['shieldEnabled', 'overlayEnabled'], (result) => {
 			this.enabled = result.shieldEnabled !== false;
 			this.applyOverlayVisibility(result.overlayEnabled !== false);
+			this.applyEnabledVisual();
 		});
 
 		chrome.storage.onChanged.addListener((changes) => {
 			if (changes.shieldEnabled) {
 				this.enabled = changes.shieldEnabled.newValue !== false;
+				this.applyEnabledVisual();
 			}
 			if (changes.overlayEnabled) {
 				this.applyOverlayVisibility(changes.overlayEnabled.newValue !== false);
@@ -51,6 +53,17 @@ class PrivacyShield {
 		});
 
 		this.attachListeners();
+	}
+
+	private applyEnabledVisual(): void {
+		if (!this.shieldElement) return;
+		if (!this.enabled) {
+			this.shieldElement.classList.remove('blue', 'green', 'red');
+			this.shieldElement.classList.add('red');
+		} else {
+			this.shieldElement.classList.remove('blue', 'green', 'red');
+			this.shieldElement.classList.add(this.shieldState);
+		}
 	}
 
 	private applyOverlayVisibility(visible: boolean): void {
@@ -213,6 +226,13 @@ class PrivacyShield {
 		}
 
 		this.shieldElement.classList.remove('blue', 'green', 'red');
+
+		if (!this.enabled) {
+			// Track the underlying state so it restores correctly on re-enable
+			this.shieldState = hasPII ? 'red' : hasInput ? 'green' : 'blue';
+			this.shieldElement.classList.add('red');
+			return;
+		}
 
 		if (hasPII) {
 			this.shieldElement.classList.add('red');

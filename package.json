@@ -18,7 +18,9 @@
     "jszip": "^3.10.1",
     "mammoth": "^1.9.1",
     "papaparse": "^5.5.3",
-    "pdfjs-dist": "^4.10.38"
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.30",

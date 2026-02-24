@@ -23,7 +23,8 @@ const extensionConfig = {
 const sanitizerConfig = {
   ...shared,
   entryPoints: {
-    sanitizer: 'src/sanitizer/index.ts'
+    sanitizer: 'src/sanitizer/index.ts',
+    'pdf-redaction-worker': 'src/shared/file/redaction/pdf/worker.ts'
   },
   format: 'esm',
   splitting: true,

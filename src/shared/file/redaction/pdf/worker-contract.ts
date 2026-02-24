@@ -1,8 +1,8 @@
-import type { PdfRedactionPlan, PdfRedactionResult, PdfRedactionSupport } from './types';
+import type { PdfExtractionContext, PdfRedactionPlan, PdfRedactionResult, PdfRedactionSupport } from './types';
 
 export type PdfRedactionWorkerRequest =
 	| { id: string; type: 'support' }
-	| { id: string; type: 'plan'; extractedText: string }
+	| { id: string; type: 'plan'; extractedText: string; extraction?: PdfExtractionContext }
 	| { id: string; type: 'apply'; file: File; plan: PdfRedactionPlan };
 
 export type PdfRedactionWorkerResponse =

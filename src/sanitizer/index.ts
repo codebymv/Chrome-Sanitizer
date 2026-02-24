@@ -2,8 +2,15 @@ import { detectMatches } from '../shared/pii/detector';
 import { PII_PATTERNS } from '../shared/pii/patterns';
 import type { DetectedMatch } from '../shared/types';
 import { generateSafeReplacement } from '../shared/pii/replacement';
-import { DECODE_TIMEOUT_MS, DOCX_SANITIZE_TIMEOUT_MS, withTimeout } from '../shared/file/security';
+import {
+  DECODE_TIMEOUT_MS,
+  DOCX_SANITIZE_TIMEOUT_MS,
+  MIN_PDF_OCR_AVERAGE_CONFIDENCE_WARNING,
+  PDF_DECODE_TIMEOUT_MS,
+  withTimeout
+} from '../shared/file/security';
 import { createPdfRedactionEngine } from '../shared/file/redaction/pdf/engine';
+import type { PdfRedactionPlan } from '../shared/file/redaction/pdf/types';
 import type { DecodedFile } from '../shared/file/types';
 import { getExtension, isImageFile, escapeHtml } from '../shared/file/utils';
 import {
@@ -391,6 +398,40 @@ function clearStatus(): void {
   statusBanner.className = 'status-banner';
 }
 
+function getPdfOcrStatusSuffix(decoded: DecodedFile | null): string {
+  const extraction = decoded?.pdfExtraction;
+  if (!extraction?.usedOcr) {
+    return '';
+  }
+
+  const scannedPart = extraction.ocrPagesScanned
+    ? ` OCR scanned ${extraction.ocrPagesScanned} page(s).`
+    : ' OCR fallback was used.';
+
+  const confidencePart = typeof extraction.ocrAverageConfidence === 'number' && extraction.ocrAverageConfidence > 0
+    ? ` Avg OCR confidence ${Math.round(extraction.ocrAverageConfidence)}%.`
+    : '';
+
+  const discardedPart = (extraction.ocrDiscardedWords ?? 0) > 0
+    ? ` Ignored ${extraction.ocrDiscardedWords} low-confidence OCR token(s).`
+    : '';
+
+  const warningPart = typeof extraction.ocrAverageConfidence === 'number'
+    && extraction.ocrAverageConfidence > 0
+    && extraction.ocrAverageConfidence < MIN_PDF_OCR_AVERAGE_CONFIDENCE_WARNING
+    ? ' OCR confidence is low; review output carefully.'
+    : '';
+
+  return `${scannedPart}${confidencePart}${discardedPart}${warningPart}`;
+}
+
+function isPdfOcrLowConfidence(decoded: DecodedFile | null): boolean {
+  const average = decoded?.pdfExtraction?.ocrAverageConfidence;
+  return typeof average === 'number'
+    && average > 0
+    && average < MIN_PDF_OCR_AVERAGE_CONFIDENCE_WARNING;
+}
+
 function wirePreviewScrollSync(): void {
   const sync = (source: HTMLElement, target: HTMLElement) => {
     if (syncingScroll) {
@@ -505,7 +546,10 @@ async function processFile(file: File): Promise<void> {
 
 async function displayDecodedFile(file: File): Promise<void> {
   try {
-    const decoded = await withTimeout(decodeUploadedFileLazy(file), DECODE_TIMEOUT_MS, 'File decode');
+    const decodeTimeoutMs = fileType === 'pdf' || file.name.toLowerCase().endsWith('.pdf')
+      ? PDF_DECODE_TIMEOUT_MS
+      : DECODE_TIMEOUT_MS;
+    const decoded = await withTimeout(decodeUploadedFileLazy(file), decodeTimeoutMs, 'File decode');
     currentDecodedFile = decoded;
 
     if (decoded.kind === 'unsupported') {
@@ -549,9 +593,21 @@ async function displayDecodedFile(file: File): Promise<void> {
     }
 
     if (decoded.sanitizationCapability !== 'preserve-format') {
-      const detectOnlyMessage = decoded.kind === 'pdf'
+      let detectOnlyMessage = decoded.kind === 'pdf'
         ? pdfRedactionEngine.getSupport().message
         : (decoded.unsupportedReason ?? 'Preserve-format sanitization is unavailable for this file type.');
+
+      if (decoded.kind === 'pdf') {
+        const plan = pdfRedactionEngine.buildPlan(decoded.extractedText, decoded.pdfExtraction);
+        const unresolvedSuffix = plan.unresolvedTargetCount > 0
+          ? ` ${plan.unresolvedTargetCount} match target(s) could not be mapped to extraction spans yet.`
+          : '';
+        const ocrSuffix = decoded.pdfExtraction?.usedOcr
+          ? ' OCR fallback was used while extracting text.'
+          : '';
+        detectOnlyMessage = `${detectOnlyMessage} Detected ${plan.matchCount} candidate item(s).${unresolvedSuffix}${ocrSuffix}`.trim();
+      }
+
       sanitizedPreview.classList.remove('docx-layout');
       sanitizedPreview.innerHTML = `<pre>${detectOnlyMessage}</pre>`;
       autoModeRadios.forEach((radio) => {
@@ -567,6 +623,24 @@ async function displayDecodedFile(file: File): Promise<void> {
       setStatus(detectOnlyMessage, 'warning');
       showPreview();
       return;
+    }
+
+    if (decoded.kind === 'pdf') {
+      if (selectedAutoMode === 'replace') {
+        applySelectedMode('hide', true);
+      }
+
+      autoModeRadios.forEach((radio) => {
+        if (radio.value === 'replace') {
+          radio.checked = false;
+          radio.disabled = true;
+          return;
+        }
+
+        radio.disabled = false;
+        radio.checked = selectedAutoMode === 'hide';
+      });
+      updatePreModeUi('hide');
     }
 
     sanitizedPreview.classList.remove('docx-layout');
@@ -1011,6 +1085,60 @@ async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise
     return;
   }
 
+  if (fileType === 'pdf') {
+    if (!currentFile || !currentDecodedFile) {
+      setStatus('No PDF file selected.', 'warning');
+      return;
+    }
+
+    const effectiveMode: AutoMode = mode === 'replace' ? 'hide' : mode;
+    if (mode === 'replace') {
+      applySelectedMode('hide', true);
+      setStatus('PDF currently supports Hide mode only. Running hide redaction instead.', 'warning');
+    }
+
+    try {
+      const plan = pdfRedactionEngine.buildPlan(currentFileContent, currentDecodedFile.pdfExtraction);
+      const result = await pdfRedactionEngine.applyPlan(currentFile, plan);
+
+      if (result.status !== 'redacted' || !result.redactedBlob) {
+        downloadBtn.disabled = true;
+        sanitizedBlob = null;
+        sanitizedContent = currentFileContent;
+        setStatus(result.message, 'error');
+        sanitizedPreview.classList.remove('docx-layout');
+        sanitizedPreview.innerHTML = `<pre>${result.message}</pre>`;
+        return;
+      }
+
+      sanitizedBlob = result.redactedBlob;
+      sanitizedContent = currentFileContent;
+      requiresManualExportOverride = plan.unresolvedTargetCount > 0;
+      pendingManualOverrideHighRiskCount = plan.unresolvedTargetCount;
+      downloadBtn.disabled = false;
+
+      const unresolvedNote = plan.unresolvedTargetCount > 0
+        ? ` ${plan.unresolvedTargetCount} target(s) could not be resolved to extraction spans.`
+        : '';
+      const ocrNote = getPdfOcrStatusSuffix(currentDecodedFile);
+      const tone: StatusTone = plan.unresolvedTargetCount > 0 || isPdfOcrLowConfidence(currentDecodedFile)
+        ? 'warning'
+        : 'success';
+      const actionLabel = autoTriggered ? 'Auto-sanitized PDF' : 'Sanitized PDF';
+      setStatus(`${actionLabel} in ${effectiveMode} mode. Updated ${plan.matchCount} detected item(s).${unresolvedNote}${ocrNote}`.trim(), tone);
+      sanitizedPreview.classList.remove('docx-layout');
+      sanitizedPreview.innerHTML = `<pre>${result.message}</pre>`;
+      return;
+    } catch (error) {
+      console.error('PDF sanitization failed:', error);
+      const reason = error instanceof Error ? error.message : 'Unknown PDF processing error.';
+      setStatus(`Could not sanitize PDF. ${reason}`, 'error');
+      downloadBtn.disabled = true;
+      sanitizedBlob = null;
+      return;
+    }
+  }
+
   if (fileType === 'docx') {
     if (!currentFile) {
       setStatus('No file selected.', 'warning');
@@ -1186,6 +1314,63 @@ async function performManualClean(): Promise<void> {
     }
   }
 
+  if (fileType === 'pdf') {
+    if (!currentFile || !currentDecodedFile) {
+      setStatus('No PDF file selected.', 'warning');
+      return;
+    }
+
+    if (selectedAutoMode === 'replace') {
+      applySelectedMode('hide', true);
+      setStatus('PDF currently supports Hide mode only. Switched to Hide for manual apply.', 'warning');
+    }
+
+    try {
+      const fullPlan = pdfRedactionEngine.buildPlan(currentFileContent, currentDecodedFile.pdfExtraction);
+      const selectedPlan = filterPdfPlanBySelection(fullPlan, selectedCandidates);
+
+      if (selectedPlan.matchCount === 0) {
+        setStatus('No selected PDF matches could be mapped for redaction.', 'warning');
+        return;
+      }
+
+      const result = await pdfRedactionEngine.applyPlan(currentFile, selectedPlan);
+      if (result.status !== 'redacted' || !result.redactedBlob) {
+        downloadBtn.disabled = true;
+        sanitizedBlob = null;
+        sanitizedContent = currentFileContent;
+        setStatus(result.message, 'error');
+        sanitizedPreview.classList.remove('docx-layout');
+        sanitizedPreview.innerHTML = `<pre>${result.message}</pre>`;
+        return;
+      }
+
+      sanitizedBlob = result.redactedBlob;
+      sanitizedContent = currentFileContent;
+      requiresManualExportOverride = selectedPlan.unresolvedTargetCount > 0;
+      pendingManualOverrideHighRiskCount = selectedPlan.unresolvedTargetCount;
+      sanitizedPreview.classList.remove('docx-layout');
+      sanitizedPreview.innerHTML = `<pre>${result.message}</pre>`;
+      downloadBtn.disabled = false;
+
+      const untouchedCount = Math.max(detectedPII.length - selectedPlan.matchCount, 0);
+      const unresolvedNote = selectedPlan.unresolvedTargetCount > 0
+        ? ` ${selectedPlan.unresolvedTargetCount} selected target(s) could not be resolved to extraction spans.`
+        : '';
+      const ocrNote = getPdfOcrStatusSuffix(currentDecodedFile);
+      const tone: StatusTone = selectedPlan.unresolvedTargetCount > 0 || isPdfOcrLowConfidence(currentDecodedFile)
+        ? 'warning'
+        : 'success';
+      setStatus(`Applied manual hide to ${selectedPlan.matchCount} selection(s). ${untouchedCount} detected value(s) were left unchanged by choice.${unresolvedNote}${ocrNote}`.trim(), tone);
+      return;
+    } catch (error) {
+      console.error('Manual PDF sanitization failed:', error);
+      const reason = error instanceof Error ? error.message : 'Unknown PDF processing error.';
+      setStatus(`Could not apply manual sanitization to PDF. ${reason}`, 'error');
+      return;
+    }
+  }
+
   const selectedMatches = selectedCandidates.map((candidate) => candidate.match);
 
   const { cleanedText, replacements, unchangedMatches } = sanitizeBySelectedMatches(currentFileContent, selectedAutoMode, selectedMatches);
@@ -1247,6 +1432,37 @@ function buildSelectedOccurrences(selectedCandidates: ManualCandidate[]): Map<st
     selected.set(candidate.signature, existing);
   }
   return selected;
+}
+
+function filterPdfPlanBySelection(plan: PdfRedactionPlan, selectedCandidates: ManualCandidate[]): PdfRedactionPlan {
+  const selectedOccurrences = buildSelectedOccurrences(selectedCandidates);
+  const seenOccurrences = new Map<string, number>();
+  const targets = [];
+  const matches = [];
+
+  for (const target of plan.targets) {
+    const signature = matchSignature(target.match);
+    const occurrence = (seenOccurrences.get(signature) ?? 0) + 1;
+    seenOccurrences.set(signature, occurrence);
+
+    const selectedForSignature = selectedOccurrences.get(signature);
+    if (!selectedForSignature?.has(occurrence)) {
+      continue;
+    }
+
+    targets.push(target);
+    matches.push(target.match);
+  }
+
+  const unresolvedTargetCount = targets.reduce((count, target) => count + (target.unresolved ? 1 : 0), 0);
+
+  return {
+    ...plan,
+    matches,
+    targets,
+    unresolvedTargetCount,
+    matchCount: targets.length
+  };
 }
 
 function shortValue(value: string): string {

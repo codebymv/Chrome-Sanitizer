@@ -1509,6 +1509,86 @@ function shortValue(value) {
   }
   return `${value.slice(0, 35)}\u2026`;
 }
+function escapeForRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function applyDocxHighlights() {
+  const host = originalPreview.querySelector(".docx-preview-host");
+  if (!host || manualCandidates.length === 0) {
+    return;
+  }
+  const valueQueue = /* @__PURE__ */ new Map();
+  for (const c of [...manualCandidates].sort((a, b) => a.match.index - b.match.index)) {
+    const q = valueQueue.get(c.match.value) ?? [];
+    q.push(c.id);
+    valueQueue.set(c.match.value, q);
+  }
+  const idToType = new Map(manualCandidates.map((c) => [c.id, c.match.type]));
+  const escapedValues = [...valueQueue.keys()].sort((a, b) => b.length - a.length).map(escapeForRegex);
+  const pattern = new RegExp(`(${escapedValues.join("|")})`, "g");
+  const occurrenceCursor = /* @__PURE__ */ new Map();
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let n;
+  while (n = walker.nextNode()) {
+    textNodes.push(n);
+  }
+  for (const textNode of textNodes) {
+    const text = textNode.textContent ?? "";
+    if (!text) {
+      continue;
+    }
+    pattern.lastIndex = 0;
+    if (!pattern.test(text)) {
+      continue;
+    }
+    pattern.lastIndex = 0;
+    const parent = textNode.parentNode;
+    if (!parent) {
+      continue;
+    }
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+    let m;
+    while ((m = pattern.exec(text)) !== null) {
+      const value = m[1];
+      const start = m.index;
+      const end = start + value.length;
+      if (start > lastIndex) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex, start)));
+      }
+      const ids = valueQueue.get(value);
+      const cursor = occurrenceCursor.get(value) ?? 0;
+      const id = ids?.[cursor];
+      if (id) {
+        occurrenceCursor.set(value, cursor + 1);
+        const mark = document.createElement("mark");
+        mark.dataset.manualId = id;
+        mark.title = idToType.get(id) ?? "";
+        mark.className = manualSelection.has(id) ? "manual-hit manual-selected" : "manual-hit";
+        mark.textContent = value;
+        fragment.appendChild(mark);
+      } else {
+        fragment.appendChild(document.createTextNode(value));
+      }
+      lastIndex = end;
+    }
+    if (lastIndex < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+    parent.replaceChild(fragment, textNode);
+  }
+}
+function updateDocxHighlights() {
+  const host = originalPreview.querySelector(".docx-preview-host");
+  if (!host) {
+    return;
+  }
+  host.querySelectorAll("mark[data-manual-id]").forEach((mark) => {
+    const id = mark.dataset.manualId ?? "";
+    mark.className = manualSelection.has(id) ? "manual-hit manual-selected" : "manual-hit";
+  });
+}
 function renderManualPreview() {
   if (!currentFileContent || manualCandidates.length === 0) {
     return;

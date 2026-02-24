@@ -380,24 +380,38 @@ export async function decodePdfFile(file: File, extension: string): Promise<Deco
     let ocrAverageConfidence: number | undefined;
     let ocrDiscardedWords: number | undefined;
 
-    if (pageTexts.length === 0) {
-      const ocr = await extractWithOcr(doc);
-      pageTexts = ocr.pageTexts;
-      spans = ocr.spans;
-      usedOcr = ocr.pageTexts.length > 0;
-      ocrPagesScanned = ocr.pagesScanned;
-      ocrAverageConfidence = ocr.averageConfidence;
-      ocrDiscardedWords = ocr.discardedWords;
+    let ocrError: string | undefined;
 
-      if (!usedOcr && doc.numPages > MAX_PDF_OCR_PAGES) {
-        throw new Error(`No readable text found. OCR fallback scanned ${MAX_PDF_OCR_PAGES} page(s); file has ${doc.numPages} pages.`);
+    if (pageTexts.length === 0) {
+      try {
+        const ocr = await extractWithOcr(doc);
+        pageTexts = ocr.pageTexts;
+        spans = ocr.spans;
+        usedOcr = ocr.pageTexts.length > 0;
+        ocrPagesScanned = ocr.pagesScanned;
+        ocrAverageConfidence = ocr.averageConfidence;
+        ocrDiscardedWords = ocr.discardedWords;
+
+        if (!usedOcr && doc.numPages > MAX_PDF_OCR_PAGES) {
+          ocrError = `OCR fallback scanned ${MAX_PDF_OCR_PAGES} of ${doc.numPages} pages but found no text.`;
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        console.error('PDF OCR fallback failed:', reason);
+        ocrError = `OCR failed: ${reason}`;
       }
     }
 
     const extractedText = pageTexts.join('\n\n');
     const previewSuffix = usedOcr
       ? '\n\n(OCR fallback was used for this PDF.)'
-      : '';
+      : ocrError
+        ? `\n\n(${ocrError})`
+        : '';
+
+    const emptyTextMessage = ocrError
+      ? `No readable text found in PDF. ${ocrError}`
+      : 'No readable text found in PDF.';
 
     return {
       kind: 'pdf',
@@ -405,7 +419,7 @@ export async function decodePdfFile(file: File, extension: string): Promise<Deco
       mimeType: file.type,
       extension,
       extractedText,
-      previewHtml: `<pre>${escapeHtml((extractedText || 'No readable text found in PDF.') + previewSuffix)}</pre>`,
+      previewHtml: `<pre>${escapeHtml((extractedText || emptyTextMessage) + previewSuffix)}</pre>`,
       canSanitizePreservingFormat: support.status === 'ready',
       sanitizationCapability: support.status === 'ready' ? 'preserve-format' : 'detect-only',
       unsupportedReason: support.status === 'ready' ? undefined : getPdfRedactionSupportMessage(),

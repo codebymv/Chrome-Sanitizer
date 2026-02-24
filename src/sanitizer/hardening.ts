@@ -9,8 +9,7 @@ const DOCX_UNSAFE_ENTRY_PATTERNS = [
 	/^word\/vbaData\.xml$/i,
 	/^word\/embeddings\//i,
 	/^word\/activeX\//i,
-	/^word\/oleObject\d+\.bin$/i,
-	/^customXml\//i
+	/^word\/oleObject\d+\.bin$/i
 ];
 
 export const FILE_INPUT_ACCEPT = [

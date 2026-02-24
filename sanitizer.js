@@ -49678,8 +49678,7 @@ Some document structures could not be parsed perfectly.` : "";
     /^word\/vbaData\.xml$/i,
     /^word\/embeddings\//i,
     /^word\/activeX\//i,
-    /^word\/oleObject\d+\.bin$/i,
-    /^customXml\//i
+    /^word\/oleObject\d+\.bin$/i
   ];
   var FILE_INPUT_ACCEPT = [
     ".txt",

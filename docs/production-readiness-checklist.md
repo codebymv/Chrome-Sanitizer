@@ -9,11 +9,12 @@
 ## 2) Privacy and Security
 - [ ] Confirm no content leaves device (no external API calls carrying user text/files).
 - [ ] Confirm extension UI pages do not rely on third-party network assets.
+- [ ] Confirm OCR worker/core/language assets are bundled locally and loaded via extension-local URLs only (no CDN fallbacks).
 - [ ] Confirm storage keys and retention behavior are documented (`sessionStats`, `historyStats`, `latestDetection`).
 - [ ] Confirm warning-only behavior is explicit (no silent submission blocking).
 - [ ] Confirm upload preflight blocks unsupported MIME/extension combinations and oversize files.
 - [ ] Confirm CSV output neutralizes spreadsheet formula injection vectors (`=`, `+`, `-`, `@`).
-- [ ] Confirm PDF redaction remains fail-closed (detect-only) until object-level removal implementation is verified.
+- [ ] Confirm PDF redaction output is clearly labeled as overlay redaction until object-level removal implementation is verified.
 
 ## 3) Build and Artifacts
 - [ ] Run `npm run typecheck`.
@@ -23,6 +24,7 @@
 
 ## 4) Automated Tests
 - [ ] Run `npm run test:detector`.
+- [ ] Run `npm run test:ocr-offline`.
 - [ ] Run `npm run test:docx -- <path-to-docx> --mode=hide` on sample docs.
 - [ ] Run `npm run test:docx -- <path-to-docx> --mode=replace` on sample docs.
 

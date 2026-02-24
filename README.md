@@ -52,13 +52,15 @@ The sanitizer supports TXT/CSV/TSV/JSON/XML/LOG/HTML/MD/DOCX/PDF and common imag
 
 - **DOCX**: supports metadata/content sanitization with additional safety checks
 - **CSV/TSV**: neutralizes potential spreadsheet formula injection output
-- **PDF**: detection is supported; downloadable object-level redaction is still intentionally disabled (detect-only scaffold)
+- **PDF**: supports downloadable overlay redaction in `Hide` mode (object-level content removal is still in progress)
+- **Scanned PDFs**: uses OCR fallback with local bundled assets (no CDN dependency)
 
 ## Privacy Model
 
 - No external API calls for user content
 - No server-side processing
 - Local browser-side detection/sanitization only
+- OCR runtime assets (worker/core/language data) are bundled in the extension package and loaded via extension-local URLs only
 - Storage is limited to extension settings/stats (`shieldEnabled`, `overlayEnabled`, session/history/latest detection)
 
 ## Install (Unpacked)
@@ -83,6 +85,7 @@ The sanitizer supports TXT/CSV/TSV/JSON/XML/LOG/HTML/MD/DOCX/PDF and common imag
 - `npm run test:content-utils`
 - `npm run test:sanitizer-hardening`
 - `npm run test:pdf-redaction-scaffold`
+- `npm run test:ocr-offline`
 - `npm run test:docx -- <path-to-docx> --mode=hide|replace`
 
 ## Supported Sites (for chat monitoring)
@@ -104,4 +107,5 @@ The sanitizer supports TXT/CSV/TSV/JSON/XML/LOG/HTML/MD/DOCX/PDF and common imag
 ## Notes
 
 - Detection is heuristic and may produce false positives/negatives.
+- PDF redaction currently uses visual overlay in output documents; object-level PDF content deletion is a planned enhancement.
 - Always review sensitive content manually before sharing.

@@ -39,6 +39,20 @@ interface OcrRuntime {
   dispose: () => Promise<void>;
 }
 
+interface TesseractCreateWorkerOptions {
+  workerPath?: string;
+  corePath?: string;
+  langPath?: string;
+  workerBlobURL?: boolean;
+  gzip?: boolean;
+  logger?: (message: unknown) => void;
+}
+
+interface TesseractWorkerInstance {
+  recognize: (image: string) => Promise<OcrRecognizeResult>;
+  terminate?: () => Promise<void>;
+}
+
 let workerBootstrapPromise: Promise<void> | null = null;
 let tesseractPromise: Promise<typeof import('tesseract.js')> | null = null;
 
@@ -77,34 +91,48 @@ async function loadTesseract(): Promise<typeof import('tesseract.js')> {
 async function createOcrRuntime(): Promise<OcrRuntime> {
   const module = await loadTesseract();
   const runtime = module as unknown as {
-    recognize?: (image: string, language?: string) => Promise<OcrRecognizeResult>;
-    createWorker?: (language?: string) => Promise<{
-      recognize: (image: string) => Promise<OcrRecognizeResult>;
-      terminate?: () => Promise<void>;
-    }>;
+    createWorker?: (
+      language?: string,
+      oem?: number,
+      options?: TesseractCreateWorkerOptions,
+      config?: Record<string, string>
+    ) => Promise<TesseractWorkerInstance>;
     default?: {
-      recognize?: (image: string, language?: string) => Promise<OcrRecognizeResult>;
-      createWorker?: (language?: string) => Promise<{
-        recognize: (image: string) => Promise<OcrRecognizeResult>;
-        terminate?: () => Promise<void>;
-      }>;
+      createWorker?: (
+        language?: string,
+        oem?: number,
+        options?: TesseractCreateWorkerOptions,
+        config?: Record<string, string>
+      ) => Promise<TesseractWorkerInstance>;
     };
   };
 
-  const recognize = runtime.recognize ?? runtime.default?.recognize;
-  if (typeof recognize === 'function') {
-    return {
-      recognize: async (image, language) => recognize(image, language),
-      dispose: async () => Promise.resolve()
-    };
-  }
-
   const createWorker = runtime.createWorker ?? runtime.default?.createWorker;
   if (typeof createWorker !== 'function') {
-    throw new Error('OCR runtime is unavailable: tesseract recognize/createWorker not found.');
+    throw new Error('OCR runtime is unavailable: tesseract createWorker not found.');
   }
 
-  const worker = await createWorker('eng');
+  const ocrAssetRoot = getLocalOcrAssetRoot();
+  const workerPath = localOcrAssetUrl('worker.min.js');
+  const corePath = localOcrAssetUrl('tesseract-core-lstm.wasm.js');
+  const worker = await createWorker(
+    'eng',
+    1,
+    {
+      workerPath,
+      corePath,
+      langPath: ocrAssetRoot,
+      workerBlobURL: false,
+      gzip: true,
+      logger: () => {}
+    },
+    {}
+  );
+
+  if (typeof worker.recognize !== 'function') {
+    throw new Error('OCR worker initialization failed: recognize method unavailable.');
+  }
+
   return {
     recognize: async (image) => worker.recognize(image),
     dispose: async () => {
@@ -113,6 +141,33 @@ async function createOcrRuntime(): Promise<OcrRuntime> {
       }
     }
   };
+}
+
+function getLocalOcrAssetRoot(): string {
+  if (typeof chrome === 'undefined' || !chrome.runtime?.getURL) {
+    throw new Error('OCR requires extension runtime URLs and cannot run in this context.');
+  }
+
+  const root = chrome.runtime.getURL('assets/ocr');
+  assertLocalExtensionUrl(root);
+  return root.replace(/\/$/, '');
+}
+
+function localOcrAssetUrl(fileName: string): string {
+  const url = `${getLocalOcrAssetRoot()}/${fileName}`;
+  assertLocalExtensionUrl(url);
+  return url;
+}
+
+function assertLocalExtensionUrl(url: string): void {
+  const isLocalExtensionUrl =
+    url.startsWith('chrome-extension://')
+    || url.startsWith('moz-extension://')
+    || url.startsWith('safari-web-extension://');
+
+  if (!isLocalExtensionUrl) {
+    throw new Error(`OCR local-only policy violation: expected extension-local URL, received ${url}`);
+  }
 }
 
 function normalizeTokenText(text: string): string {

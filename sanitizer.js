@@ -1903,7 +1903,7 @@ function csvToTable(csvText) {
 }
 async function decodeUploadedFileLazy(file) {
   if (!decodeUploadedFilePromise) {
-    decodeUploadedFilePromise = import("./chunks/registry-TGOWRLVL.js");
+    decodeUploadedFilePromise = import("./chunks/registry-GVICCUE7.js");
   }
   const module = await decodeUploadedFilePromise;
   return module.decodeUploadedFile(file);

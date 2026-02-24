@@ -24,6 +24,7 @@ import {
 } from './hardening';
 import Papa from 'papaparse';
 import type JSZip from 'jszip';
+import type * as PdfJs from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 type FileKind = 'text' | 'csv' | 'docx' | 'pdf' | 'image' | '';
 type AutoMode = 'hide' | 'replace';
@@ -89,6 +90,11 @@ const pdfRedactionEngine = createPdfRedactionEngine();
 let decodeUploadedFilePromise: Promise<typeof import('../shared/file/registry')> | null = null;
 let jsZipPromise: Promise<typeof import('jszip')> | null = null;
 let docxPreviewPromise: Promise<typeof import('docx-preview')> | null = null;
+let pdfJsPromise: Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')> | null = null;
+let pdfPreviewWorkerBootstrapPromise: Promise<void> | null = null;
+
+const MAX_PDF_PREVIEW_PAGES = 20;
+const PDF_PREVIEW_SCALE = 1.15;
 
 uploadZone.addEventListener('click', () => {
   fileInput.click();
@@ -453,6 +459,10 @@ function wirePreviewScrollSync(): void {
   sanitizedPreview.addEventListener('scroll', () => sync(sanitizedPreview, originalPreview));
 }
 
+function resetPreviewLayoutClass(container: HTMLElement): void {
+  container.classList.remove('docx-layout', 'pdf-layout');
+}
+
 function clearEverything(): void {
   currentFile = null;
   currentFileContent = null;
@@ -482,8 +492,8 @@ function clearEverything(): void {
 
   originalPreview.innerHTML = '';
   sanitizedPreview.innerHTML = '';
-  originalPreview.classList.remove('docx-layout');
-  sanitizedPreview.classList.remove('docx-layout');
+  resetPreviewLayoutClass(originalPreview);
+  resetPreviewLayoutClass(sanitizedPreview);
 
   mainContainer.classList.remove('active');
   uploadZone.classList.remove('hidden');
@@ -556,8 +566,8 @@ async function displayDecodedFile(file: File): Promise<void> {
       currentFileContent = null;
       detectedPII = [];
       fileType = '';
-      originalPreview.classList.remove('docx-layout');
-      sanitizedPreview.classList.remove('docx-layout');
+      resetPreviewLayoutClass(originalPreview);
+      resetPreviewLayoutClass(sanitizedPreview);
       originalPreview.innerHTML = decoded.previewHtml;
       sanitizedPreview.innerHTML = `<pre>Cannot process this file type.\n${decoded.unsupportedReason ?? 'Unsupported file format.'}</pre>`;
       autoModeRadios.forEach((radio) => {
@@ -585,8 +595,11 @@ async function displayDecodedFile(file: File): Promise<void> {
       await renderDocxPreview(originalPreview, file);
       updateManualReviewUi();
       applyDocxHighlights();
+    } else if (decoded.kind === 'pdf') {
+      await renderPdfPreview(originalPreview, file);
+      updateManualReviewUi();
     } else {
-      originalPreview.classList.remove('docx-layout');
+      resetPreviewLayoutClass(originalPreview);
       originalPreview.innerHTML = decoded.previewHtml;
       updateManualReviewUi();
       renderManualPreview();
@@ -608,7 +621,7 @@ async function displayDecodedFile(file: File): Promise<void> {
         detectOnlyMessage = `${detectOnlyMessage} Detected ${plan.matchCount} candidate item(s).${unresolvedSuffix}${ocrSuffix}`.trim();
       }
 
-      sanitizedPreview.classList.remove('docx-layout');
+      resetPreviewLayoutClass(sanitizedPreview);
       sanitizedPreview.innerHTML = `<pre>${detectOnlyMessage}</pre>`;
       autoModeRadios.forEach((radio) => {
         radio.checked = false;
@@ -643,7 +656,7 @@ async function displayDecodedFile(file: File): Promise<void> {
       updatePreModeUi('hide');
     }
 
-    sanitizedPreview.classList.remove('docx-layout');
+    resetPreviewLayoutClass(sanitizedPreview);
     sanitizedPreview.innerHTML = '<pre>Sanitizing automatically…</pre>';
     autoCleanBtn.disabled = false;
 
@@ -666,8 +679,8 @@ async function displayImage(file: File): Promise<void> {
   const dataUrl = await readFileAsDataUrl(file);
   currentFileContent = dataUrl;
 
-  originalPreview.classList.remove('docx-layout');
-  sanitizedPreview.classList.remove('docx-layout');
+  resetPreviewLayoutClass(originalPreview);
+  resetPreviewLayoutClass(sanitizedPreview);
 
   originalPreview.innerHTML = `<img src="${dataUrl}" alt="Original">`;
   sanitizedPreview.innerHTML = '<pre style="color: #f59e0b; text-align: center; padding: 40px;">Image sanitization is not supported yet.\nUpload text or CSV for cleaning.</pre>';
@@ -1051,6 +1064,7 @@ async function scrubDocxMetadata(zip: JSZip): Promise<number> {
 
 async function renderDocxPreview(container: HTMLElement, source: Blob): Promise<void> {
   container.innerHTML = '';
+  container.classList.remove('pdf-layout');
   container.classList.add('docx-layout');
 
   const host = document.createElement('div');
@@ -1067,6 +1081,100 @@ async function renderDocxPreview(container: HTMLElement, source: Blob): Promise<
     renderEndnotes: true,
     useBase64URL: true
   });
+}
+
+async function loadPdfJs(): Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')> {
+  if (!pdfJsPromise) {
+    pdfJsPromise = import('pdfjs-dist/legacy/build/pdf.mjs');
+  }
+
+  return pdfJsPromise;
+}
+
+async function ensurePdfPreviewWorkerConfigured(pdfjs: PdfJs): Promise<void> {
+  if (pdfPreviewWorkerBootstrapPromise) {
+    return pdfPreviewWorkerBootstrapPromise;
+  }
+
+  pdfPreviewWorkerBootstrapPromise = (async () => {
+    try {
+      const workerModule = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+      const scope = globalThis as typeof globalThis & { pdfjsWorker?: unknown };
+
+      if (!scope.pdfjsWorker) {
+        scope.pdfjsWorker = workerModule;
+      }
+
+      if (pdfjs.GlobalWorkerOptions.workerPort) {
+        pdfjs.GlobalWorkerOptions.workerPort = null;
+      }
+    } catch (error) {
+      console.warn('PDF preview worker bootstrap failed. Falling back to default worker resolution.', error);
+    }
+  })();
+
+  return pdfPreviewWorkerBootstrapPromise;
+}
+
+async function renderPdfPreview(container: HTMLElement, source: Blob): Promise<void> {
+  container.innerHTML = '';
+  container.classList.remove('docx-layout');
+  container.classList.add('pdf-layout');
+
+  const host = document.createElement('div');
+  host.className = 'pdf-preview-host';
+  container.appendChild(host);
+
+  const data = await source.arrayBuffer();
+  const pdfjs = await loadPdfJs();
+  await ensurePdfPreviewWorkerConfigured(pdfjs);
+  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(data) });
+
+  try {
+    const doc = await loadingTask.promise;
+    const pageLimit = Math.min(doc.numPages, MAX_PDF_PREVIEW_PAGES);
+
+    for (let pageNumber = 1; pageNumber <= pageLimit; pageNumber += 1) {
+      const page = await doc.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: PDF_PREVIEW_SCALE });
+
+      const pageWrap = document.createElement('div');
+      pageWrap.className = 'pdf-preview-page-wrap';
+
+      const pageLabel = document.createElement('div');
+      pageLabel.className = 'pdf-preview-page-label';
+      pageLabel.textContent = `Page ${pageNumber}`;
+
+      const canvas = document.createElement('canvas');
+      canvas.className = 'pdf-preview-page';
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+
+      const context = canvas.getContext('2d');
+      if (!context) {
+        continue;
+      }
+
+      await page.render({ canvasContext: context, viewport }).promise;
+
+      pageWrap.appendChild(pageLabel);
+      pageWrap.appendChild(canvas);
+      host.appendChild(pageWrap);
+    }
+
+    if (doc.numPages > pageLimit) {
+      const overflowNote = document.createElement('div');
+      overflowNote.className = 'pdf-preview-overflow';
+      overflowNote.textContent = `Showing first ${pageLimit} of ${doc.numPages} pages in preview.`;
+      host.appendChild(overflowNote);
+    }
+  } finally {
+    try {
+      await loadingTask.destroy();
+    } catch {
+      // Ignore teardown errors from PDF.js tasks.
+    }
+  }
 }
 
 async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise<void> {
@@ -1106,7 +1214,7 @@ async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise
         sanitizedBlob = null;
         sanitizedContent = currentFileContent;
         setStatus(result.message, 'error');
-        sanitizedPreview.classList.remove('docx-layout');
+        resetPreviewLayoutClass(sanitizedPreview);
         sanitizedPreview.innerHTML = `<pre>${result.message}</pre>`;
         return;
       }
@@ -1126,8 +1234,7 @@ async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise
         : 'success';
       const actionLabel = autoTriggered ? 'Auto-sanitized PDF' : 'Sanitized PDF';
       setStatus(`${actionLabel} in ${effectiveMode} mode. Updated ${plan.matchCount} detected item(s).${unresolvedNote}${ocrNote}`.trim(), tone);
-      sanitizedPreview.classList.remove('docx-layout');
-      sanitizedPreview.innerHTML = `<pre>${result.message}</pre>`;
+      await renderPdfPreview(sanitizedPreview, result.redactedBlob);
       return;
     } catch (error) {
       console.error('PDF sanitization failed:', error);
@@ -1196,7 +1303,7 @@ async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise
     }
   }
 
-  sanitizedPreview.classList.remove('docx-layout');
+  resetPreviewLayoutClass(sanitizedPreview);
 
   const inputText = currentFileContent;
   const { cleanedText, replacements, unchangedMatches } = sanitizePlainText(inputText, mode);
@@ -1340,7 +1447,7 @@ async function performManualClean(): Promise<void> {
         sanitizedBlob = null;
         sanitizedContent = currentFileContent;
         setStatus(result.message, 'error');
-        sanitizedPreview.classList.remove('docx-layout');
+        resetPreviewLayoutClass(sanitizedPreview);
         sanitizedPreview.innerHTML = `<pre>${result.message}</pre>`;
         return;
       }
@@ -1349,8 +1456,7 @@ async function performManualClean(): Promise<void> {
       sanitizedContent = currentFileContent;
       requiresManualExportOverride = selectedPlan.unresolvedTargetCount > 0;
       pendingManualOverrideHighRiskCount = selectedPlan.unresolvedTargetCount;
-      sanitizedPreview.classList.remove('docx-layout');
-      sanitizedPreview.innerHTML = `<pre>${result.message}</pre>`;
+      await renderPdfPreview(sanitizedPreview, result.redactedBlob);
       downloadBtn.disabled = false;
 
       const untouchedCount = Math.max(detectedPII.length - selectedPlan.matchCount, 0);
@@ -1392,7 +1498,7 @@ async function performManualClean(): Promise<void> {
   const residualHighRisk = filterHighRiskResidual(detectMatches(hardenedOutput.text, PII_PATTERNS));
   requiresManualExportOverride = residualHighRisk.length > 0;
   pendingManualOverrideHighRiskCount = residualHighRisk.length;
-  sanitizedPreview.classList.remove('docx-layout');
+  resetPreviewLayoutClass(sanitizedPreview);
   sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(hardenedOutput.text) : `<pre>${escapeHtml(hardenedOutput.text)}</pre>`;
   downloadBtn.disabled = false;
 
@@ -1588,6 +1694,10 @@ function renderManualPreview(): void {
     return;
   }
 
+  if (fileType === 'pdf') {
+    return;
+  }
+
   const ordered = [...manualCandidates].sort((a, b) => a.match.index - b.match.index);
   let cursor = 0;
   let html = '';
@@ -1606,7 +1716,7 @@ function renderManualPreview(): void {
   }
 
   html += escapeHtml(currentFileContent.slice(cursor));
-  originalPreview.classList.remove('docx-layout');
+  resetPreviewLayoutClass(originalPreview);
   originalPreview.innerHTML = `<pre>${html}</pre>`;
 }
 

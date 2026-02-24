@@ -289,7 +289,7 @@ manualList.addEventListener('change', (event) => {
 });
 
 autoCleanBtn.addEventListener('click', () => {
-  if (!currentFileContent) {
+  if (currentFileContent === null) {
     setStatus('Upload a supported file to sanitize first.', 'warning');
     return;
   }
@@ -384,7 +384,7 @@ function applySelectedMode(mode: AutoMode, persist: boolean): void {
     radio.checked = radio.value === mode;
   });
   updatePreModeUi(mode);
-  autoCleanBtn.disabled = !currentFileContent;
+  autoCleanBtn.disabled = currentFileContent === null;
 
   if (persist) {
     void chrome.storage.local.set({ [MODE_STORAGE_KEY]: mode });
@@ -1178,7 +1178,7 @@ async function renderPdfPreview(container: HTMLElement, source: Blob): Promise<v
 }
 
 async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise<void> {
-  if (!currentFileContent) {
+  if (currentFileContent === null) {
     setStatus('No file content available to sanitize.', 'warning');
     return;
   }
@@ -1356,7 +1356,7 @@ async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise
 }
 
 async function performManualClean(): Promise<void> {
-  if (!currentFileContent) {
+  if (currentFileContent === null) {
     setStatus('Upload a supported file to sanitize first.', 'warning');
     return;
   }

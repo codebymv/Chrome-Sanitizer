@@ -712,7 +712,7 @@ manualList.addEventListener("change", (event) => {
   }
 });
 autoCleanBtn.addEventListener("click", () => {
-  if (!currentFileContent) {
+  if (currentFileContent === null) {
     setStatus("Upload a supported file to sanitize first.", "warning");
     return;
   }
@@ -787,7 +787,7 @@ function applySelectedMode(mode, persist) {
     radio.checked = radio.value === mode;
   });
   updatePreModeUi(mode);
-  autoCleanBtn.disabled = !currentFileContent;
+  autoCleanBtn.disabled = currentFileContent === null;
   if (persist) {
     void chrome.storage.local.set({ [MODE_STORAGE_KEY]: mode });
   }
@@ -1419,7 +1419,7 @@ async function renderPdfPreview(container, source) {
   }
 }
 async function performAutoClean(mode, autoTriggered) {
-  if (!currentFileContent) {
+  if (currentFileContent === null) {
     setStatus("No file content available to sanitize.", "warning");
     return;
   }
@@ -1562,7 +1562,7 @@ async function performAutoClean(mode, autoTriggered) {
   setStatus(autoTriggered ? `Auto-sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).${csvSafetyNote}` : `Sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).${csvSafetyNote}`, "success");
 }
 async function performManualClean() {
-  if (!currentFileContent) {
+  if (currentFileContent === null) {
     setStatus("Upload a supported file to sanitize first.", "warning");
     return;
   }

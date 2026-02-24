@@ -1989,7 +1989,7 @@ function csvToTable(csvText) {
 }
 async function decodeUploadedFileLazy(file) {
   if (!decodeUploadedFilePromise) {
-    decodeUploadedFilePromise = import("./chunks/registry-FB6DLGF3.js");
+    decodeUploadedFilePromise = import("./chunks/registry-MOZHTDXU.js");
   }
   const module = await decodeUploadedFilePromise;
   return module.decodeUploadedFile(file);

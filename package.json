@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "test:docx": "tsx scripts/test-docx-sanitization.ts",
     "test:detector": "tsx scripts/test-pii-detector.ts",
-    "test:content-utils": "tsx scripts/test-content-runtime-utils.ts"
+    "test:content-utils": "tsx scripts/test-content-runtime-utils.ts",
+    "test:sanitizer-hardening": "tsx scripts/test-sanitizer-hardening.ts",
+    "test:pdf-redaction-scaffold": "tsx scripts/test-pdf-redaction-scaffold.ts"
   },
   "dependencies": {
     "docx-preview": "^0.3.6",

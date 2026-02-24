@@ -22,7 +22,7 @@ const cases: Case[] = [
   },
   {
     name: 'detects API key and auth token',
-    text: 'api_key: sk_live_1234567890abcdef1234 bearer: abcdefghijklmnopqrstuvwxyz123456',
+    text: 'api_key: rk_test_1234567890abcdef1234 bearer: abcdefghijklmnopqrstuvwxyz123456',
     expectedKeys: ['apiKey', 'authToken']
   },
   {

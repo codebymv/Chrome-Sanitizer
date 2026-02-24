@@ -305,6 +305,150 @@
       background: var(--color-accent-tint);
     }
 
+    /* ─── Redesigned Controls Layout ─────────────────────── */
+    .controls-card {
+      flex: 0 0 300px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .pii-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .control-section-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--color-text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .control-divider {
+      height: 1px;
+      background: var(--color-border);
+      margin: 14px 0;
+    }
+
+    .control-section .clean-button {
+      margin-top: 4px;
+    }
+
+    .pii-sticky-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 10px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid var(--color-border-subtle);
+    }
+
+    .pii-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .pii-action-btn {
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text-secondary);
+      border-radius: var(--radius-sm);
+      padding: 3px 10px;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body);
+      transition: all var(--transition-fast);
+    }
+
+    .pii-action-btn:hover {
+      border-color: var(--color-accent);
+      background: var(--color-accent-subtle);
+      color: var(--color-accent);
+    }
+
+    .pii-card .manual-review {
+      flex: 1;
+      max-height: 340px;
+      margin-bottom: 12px;
+    }
+
+    .pii-card .clean-button {
+      float: none;
+      width: 100%;
+    }
+
+    /* ─── PII Accordion Groups ───────────────────────────── */
+    .pii-group {
+      margin-bottom: 2px;
+    }
+
+    .pii-group-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 6px;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      user-select: none;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-primary);
+      transition: background var(--transition-fast);
+    }
+
+    .pii-group-header:hover {
+      background: var(--color-accent-subtle);
+    }
+
+    .pii-group-chevron {
+      flex-shrink: 0;
+      transition: transform 0.2s ease;
+      color: var(--color-text-tertiary);
+    }
+
+    .pii-group.collapsed .pii-group-chevron {
+      transform: rotate(-90deg);
+    }
+
+    .pii-group.collapsed .pii-group-items {
+      display: none;
+    }
+
+    .pii-group-checkbox {
+      width: 13px;
+      height: 13px;
+      accent-color: var(--color-accent);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .pii-group-label {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .pii-group-count {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--color-text-tertiary);
+      background: var(--color-surface-sunken);
+      padding: 1px 6px;
+      border-radius: 10px;
+      flex-shrink: 0;
+    }
+
+    .pii-group-items {
+      padding-left: 28px;
+    }
+
     .manual-selection-popup {
       position: fixed;
       z-index: 2000;
@@ -704,55 +848,76 @@
         <div class="upload-mode-help" id="preModeHelp">Hide masks sensitive values with blocks. Applied automatically after upload.</div>
       </div>
     </div>
-    <input type="file" id="fileInput" class="file-input" aria-label="Select file to sanitize">
+    <input type="file" id="fileInput" class="file-input" aria-label="Select file to sanitize" accept=".txt,.md,.json,.xml,.log,.html,.htm,.csv,.tsv,.docx,.pdf,.jpg,.jpeg,.png,.gif,.bmp,.webp,.svg">
   </div>
 
   <div class="main-container" id="mainContainer">
     <div class="status-banner" id="statusBanner" role="status" aria-live="polite"></div>
     <div class="controls-panel">
-      <div class="control-field">
-        <div class="field-header">Auto</div>
-        <div class="field-options">
-          <div class="radio-option">
-            <input type="radio" id="autoHide" name="autoMode" value="hide">
-            <div class="option-body">
-              <label for="autoHide">Hide</label>
-              <div class="option-help">Masks sensitive values with blocks to remove readable content.</div>
+      <!-- Left: Controls Card -->
+      <div class="control-field controls-card">
+        <div class="field-header">Controls</div>
+
+        <!-- Auto Section -->
+        <div class="control-section">
+          <div class="control-section-label">Auto</div>
+          <div class="field-options">
+            <div class="radio-option">
+              <input type="radio" id="autoHide" name="autoMode" value="hide">
+              <div class="option-body">
+                <label for="autoHide">Hide</label>
+                <div class="option-help">Masks sensitive values with blocks.</div>
+              </div>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="autoReplace" name="autoMode" value="replace">
+              <div class="option-body">
+                <label for="autoReplace">Replace</label>
+                <div class="option-help">Swaps values with synthetic placeholders.</div>
+              </div>
             </div>
           </div>
-          <div class="radio-option">
-            <input type="radio" id="autoReplace" name="autoMode" value="replace">
-            <div class="option-body">
-              <label for="autoReplace">Replace</label>
-              <div class="option-help">Swaps sensitive values with realistic synthetic placeholders.</div>
+          <button class="clean-button" id="autoCleanBtn" disabled>Re-run</button>
+          <div style="clear:both"></div>
+        </div>
+
+        <div class="control-divider"></div>
+
+        <!-- Manual Section -->
+        <div class="control-section">
+          <div class="control-section-label">Manual</div>
+          <div class="manual-helper" id="manualHelperText">Select a manual mode to review detected values.</div>
+          <div class="field-options">
+            <div class="radio-option">
+              <input type="radio" id="manualSelect" name="manualMode" value="select">
+              <div class="option-body">
+                <label for="manualSelect">Select</label>
+                <div class="option-help">Choose specific values to sanitize.</div>
+              </div>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="manualHighlight" name="manualMode" value="highlight">
+              <div class="option-body">
+                <label for="manualHighlight">Highlight</label>
+                <div class="option-help">Preselect all, then deselect to keep.</div>
+              </div>
             </div>
           </div>
         </div>
-        <button class="clean-button" id="autoCleanBtn" disabled>Re-run</button>
       </div>
 
-      <div class="control-field">
-        <div class="field-header">Manual</div>
-        <div class="manual-helper" id="manualHelperText">Select a manual mode to review detected sensitive values.</div>
-        <div class="manual-review" id="manualReviewPanel">
+      <!-- Right: PII Instances Card -->
+      <div class="control-field pii-card">
+        <div class="field-header">Detected PII</div>
+        <div class="pii-sticky-header">
           <div class="manual-summary" id="manualSummary">No detected values loaded yet.</div>
-          <div class="manual-list" id="manualList"></div>
+          <div class="pii-actions">
+            <button type="button" class="pii-action-btn" id="selectAllBtn">Select All</button>
+            <button type="button" class="pii-action-btn" id="deselectAllBtn">Deselect All</button>
+          </div>
         </div>
-        <div class="field-options">
-          <div class="radio-option">
-            <input type="radio" id="manualSelect" name="manualMode" value="select">
-            <div class="option-body">
-              <label for="manualSelect">Select</label>
-              <div class="option-help">Choose specific sensitive values to sanitize.</div>
-            </div>
-          </div>
-          <div class="radio-option">
-            <input type="radio" id="manualHighlight" name="manualMode" value="highlight">
-            <div class="option-body">
-              <label for="manualHighlight">Highlight</label>
-              <div class="option-help">Preselect all detected values, then deselect any you want to keep.</div>
-            </div>
-          </div>
+        <div class="manual-review" id="manualReviewPanel">
+          <div class="manual-list" id="manualList"></div>
         </div>
         <button class="clean-button" id="manualCleanBtn" disabled>Apply Selection</button>
       </div>

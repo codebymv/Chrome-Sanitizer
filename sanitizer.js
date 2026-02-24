@@ -24389,7 +24389,8 @@
       extension,
       extractedText: rawText,
       previewHtml: csvRowsToTable(rows),
-      canSanitizePreservingFormat: true
+      canSanitizePreservingFormat: true,
+      sanitizationCapability: "preserve-format"
     };
   }
 
@@ -24410,7 +24411,8 @@ Some document structures could not be parsed perfectly.` : "";
       extension,
       extractedText,
       previewHtml: `<pre>${escapeHtml(extractedText || "No readable text found.")}${escapeHtml(warningText)}</pre>`,
-      canSanitizePreservingFormat: true
+      canSanitizePreservingFormat: true,
+      sanitizationCapability: "preserve-format"
     };
   }
 
@@ -49495,32 +49497,102 @@ Some document structures could not be parsed perfectly.` : "";
   var __webpack_exports__stopEvent = __webpack_exports__.stopEvent;
   var __webpack_exports__version = __webpack_exports__.version;
 
+  // src/shared/file/security.ts
+  var DECODE_TIMEOUT_MS = 15e3;
+  var DOCX_SANITIZE_TIMEOUT_MS = 2e4;
+  var MAX_PDF_PAGES = 75;
+  var MAX_PDF_EXTRACTED_CHARS = 75e4;
+  async function withTimeout(promise, timeoutMs, label) {
+    let timer = null;
+    const timeoutPromise = new Promise((_3, reject2) => {
+      timer = setTimeout(() => {
+        reject2(new Error(`${label} timed out after ${timeoutMs}ms.`));
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  // src/shared/file/redaction/pdf/engine.ts
+  var PDF_REDACTION_SCAFFOLD_MESSAGE = "PDF redaction pipeline is scaffolded, but downloadable redacted PDFs stay disabled until object-level content removal is implemented.";
+  var ScaffoldPdfRedactionEngine = class {
+    getSupport() {
+      return {
+        status: "scaffold",
+        objectLevelRemoval: false,
+        message: PDF_REDACTION_SCAFFOLD_MESSAGE
+      };
+    }
+    buildPlan(extractedText) {
+      const matches = detectMatches(extractedText, PII_PATTERNS);
+      return {
+        matches,
+        matchCount: matches.length,
+        generatedAt: Date.now()
+      };
+    }
+    async applyPlan(_file, plan) {
+      return {
+        status: "unsupported",
+        message: PDF_REDACTION_SCAFFOLD_MESSAGE,
+        matchCount: plan.matchCount
+      };
+    }
+  };
+  function createPdfRedactionEngine() {
+    return new ScaffoldPdfRedactionEngine();
+  }
+  function getPdfRedactionSupportMessage() {
+    return PDF_REDACTION_SCAFFOLD_MESSAGE;
+  }
+
   // src/shared/file/decoders/pdf.ts
   async function decodePdfFile(file, extension) {
     const buffer = await file.arrayBuffer();
     const loadingTask = __webpack_exports__getDocument({ data: new Uint8Array(buffer) });
-    const doc = await loadingTask.promise;
-    const pageTexts = [];
-    for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
-      const page = await doc.getPage(pageNumber);
-      const textContent = await page.getTextContent();
-      const tokens = textContent.items;
-      const pageText = tokens.map((item) => item.str ?? "").join(" ").trim();
-      if (pageText) {
-        pageTexts.push(pageText);
+    try {
+      const doc = await loadingTask.promise;
+      if (doc.numPages > MAX_PDF_PAGES) {
+        throw new Error(`PDF has ${doc.numPages} pages. Maximum supported is ${MAX_PDF_PAGES}.`);
+      }
+      const pageTexts = [];
+      let extractedChars = 0;
+      for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+        const page = await doc.getPage(pageNumber);
+        const textContent = await page.getTextContent();
+        const tokens = textContent.items;
+        const pageText = tokens.map((item) => item.str ?? "").join(" ").trim();
+        if (pageText) {
+          extractedChars += pageText.length;
+          if (extractedChars > MAX_PDF_EXTRACTED_CHARS) {
+            throw new Error(`PDF text exceeds maximum supported extraction size (${MAX_PDF_EXTRACTED_CHARS} chars).`);
+          }
+          pageTexts.push(pageText);
+        }
+      }
+      const extractedText = pageTexts.join("\n\n");
+      return {
+        kind: "pdf",
+        fileName: file.name,
+        mimeType: file.type,
+        extension,
+        extractedText,
+        previewHtml: `<pre>${escapeHtml(extractedText || "No readable text found in PDF.")}</pre>`,
+        canSanitizePreservingFormat: false,
+        sanitizationCapability: "detect-only",
+        unsupportedReason: getPdfRedactionSupportMessage()
+      };
+    } finally {
+      try {
+        await loadingTask.destroy();
+      } catch {
       }
     }
-    const extractedText = pageTexts.join("\n\n");
-    return {
-      kind: "pdf",
-      fileName: file.name,
-      mimeType: file.type,
-      extension,
-      extractedText,
-      previewHtml: `<pre>${escapeHtml(extractedText || "No readable text found in PDF.")}</pre>`,
-      canSanitizePreservingFormat: false,
-      unsupportedReason: "PDF text extraction is available, but preserve-format sanitization is not enabled yet."
-    };
   }
 
   // src/shared/file/decoders/text.ts
@@ -49533,7 +49605,8 @@ Some document structures could not be parsed perfectly.` : "";
       extension,
       extractedText: text,
       previewHtml: `<pre>${escapeHtml(text)}</pre>`,
-      canSanitizePreservingFormat: true
+      canSanitizePreservingFormat: true,
+      sanitizationCapability: "preserve-format"
     };
   }
 
@@ -49592,12 +49665,151 @@ Some document structures could not be parsed perfectly.` : "";
       extractedText: "",
       previewHtml: "<pre>Unsupported format. Please upload TXT, CSV/TSV, DOCX, or PDF.</pre>",
       canSanitizePreservingFormat: false,
+      sanitizationCapability: "unsupported",
       unsupportedReason: "Unsupported file format for decoding."
     };
   }
 
-  // src/sanitizer/index.ts
+  // src/sanitizer/hardening.ts
   var import_papaparse2 = __toESM(require_papaparse_min(), 1);
+  var MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
+  var DOCX_UNSAFE_ENTRY_PATTERNS = [
+    /^word\/vbaProject\.bin$/i,
+    /^word\/vbaData\.xml$/i,
+    /^word\/embeddings\//i,
+    /^word\/activeX\//i,
+    /^word\/oleObject\d+\.bin$/i,
+    /^customXml\//i
+  ];
+  var FILE_INPUT_ACCEPT = [
+    ".txt",
+    ".md",
+    ".json",
+    ".xml",
+    ".log",
+    ".html",
+    ".htm",
+    ".csv",
+    ".tsv",
+    ".docx",
+    ".pdf",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".bmp",
+    ".webp",
+    ".svg"
+  ].join(",");
+  var ALLOWED_EXTENSIONS = /* @__PURE__ */ new Set([
+    ".txt",
+    ".md",
+    ".json",
+    ".xml",
+    ".log",
+    ".html",
+    ".htm",
+    ".csv",
+    ".tsv",
+    ".docx",
+    ".pdf",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".bmp",
+    ".webp",
+    ".svg"
+  ]);
+  var ALLOWED_MIME_PREFIXES = ["text/", "image/", "application/json", "application/xml"];
+  var EXTENSION_MIME_HINTS = {
+    ".docx": ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+    ".pdf": ["application/pdf"],
+    ".csv": ["text/csv", "application/csv", "application/vnd.ms-excel"],
+    ".tsv": ["text/tab-separated-values", "text/tsv"],
+    ".json": ["application/json", "text/json"],
+    ".xml": ["application/xml", "text/xml"],
+    ".svg": ["image/svg+xml", "text/xml"]
+  };
+  var HIGH_RISK_PII_KEYS = /* @__PURE__ */ new Set([
+    "ssn",
+    "creditCard",
+    "bankAccount",
+    "routingNumber",
+    "cvv",
+    "cardExpiry",
+    "fullNameContextual",
+    "email",
+    "phone",
+    "driversLicense",
+    "dob",
+    "passport",
+    "apiKey",
+    "authToken"
+  ]);
+  function validateUploadPreflight(file) {
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      return "File too large. Maximum size is 10 MB.";
+    }
+    const extension = getExtension(file.name);
+    const mime = file.type.toLowerCase();
+    const extensionAllowed = extension ? ALLOWED_EXTENSIONS.has(extension) : false;
+    const mimeAllowed = ALLOWED_MIME_PREFIXES.some((prefix) => mime.startsWith(prefix));
+    if (!extensionAllowed && !mimeAllowed) {
+      return "Unsupported file type. Allowed: TXT, CSV/TSV, DOCX, PDF, and common image formats.";
+    }
+    if (!extension || !mime) {
+      return null;
+    }
+    const expectedMimes = EXTENSION_MIME_HINTS[extension];
+    if (!expectedMimes) {
+      return null;
+    }
+    const mimeLooksValid = expectedMimes.some((expected) => mime === expected || mime.startsWith(expected));
+    if (!mimeLooksValid) {
+      return `File type mismatch detected for ${extension}. Please upload a valid file.`;
+    }
+    return null;
+  }
+  function filterHighRiskResidual(matches) {
+    return matches.filter((match) => HIGH_RISK_PII_KEYS.has(match.key));
+  }
+  function neutralizeCsvFormulaInjection(csvText) {
+    const parsed = import_papaparse2.default.parse(csvText, {
+      skipEmptyLines: false
+    });
+    if (parsed.errors.length > 0) {
+      return { text: csvText, updatedCells: 0 };
+    }
+    let updatedCells = 0;
+    const hardenedRows = parsed.data.map((row) => row.map((cell) => {
+      const value = String(cell ?? "");
+      if (!/^[=+\-@]/.test(value)) {
+        return value;
+      }
+      updatedCells += 1;
+      return `'${value}`;
+    }));
+    if (updatedCells === 0) {
+      return { text: csvText, updatedCells: 0 };
+    }
+    return {
+      text: import_papaparse2.default.unparse(hardenedRows),
+      updatedCells
+    };
+  }
+  function detectUnsafeDocxEntryPaths(paths) {
+    return paths.filter((path) => DOCX_UNSAFE_ENTRY_PATTERNS.some((pattern) => pattern.test(path)));
+  }
+  function buildManualOverrideWarning(highRiskResidualCount) {
+    if (highRiskResidualCount <= 0) {
+      return "";
+    }
+    return `High-risk data remains (${highRiskResidualCount} item${highRiskResidualCount === 1 ? "" : "s"}). Download requires explicit override confirmation.`;
+  }
+
+  // src/sanitizer/index.ts
+  var import_papaparse3 = __toESM(require_papaparse_min(), 1);
   var import_jszip2 = __toESM(require_jszip_min(), 1);
 
   // node_modules/docx-preview/dist/docx-preview.mjs
@@ -53599,6 +53811,8 @@ section.${c}>footer { z-index: 1; }
   var manualSelectionPopup = mustGet("manualSelectionPopup");
   var manualPopupHideBtn = mustGet("manualPopupHideBtn");
   var manualPopupReplaceBtn = mustGet("manualPopupReplaceBtn");
+  var selectAllBtn = mustGet("selectAllBtn");
+  var deselectAllBtn = mustGet("deselectAllBtn");
   var autoModeRadios = Array.from(document.querySelectorAll('input[name="autoMode"]'));
   var manualModeRadios = Array.from(document.querySelectorAll('input[name="manualMode"]'));
   var currentFile = null;
@@ -53616,6 +53830,9 @@ section.${c}>footer { z-index: 1; }
   var manualSelection = /* @__PURE__ */ new Map();
   var manualCandidates = [];
   var pendingPopupCandidateIds = [];
+  var requiresManualExportOverride = false;
+  var pendingManualOverrideHighRiskCount = 0;
+  var pdfRedactionEngine = createPdfRedactionEngine();
   uploadZone.addEventListener("click", () => {
     fileInput.click();
   });
@@ -53746,6 +53963,49 @@ section.${c}>footer { z-index: 1; }
   manualPopupReplaceBtn.addEventListener("click", () => {
     applyPopupSelection("replace");
   });
+  selectAllBtn.addEventListener("click", () => {
+    manualSelection = new Map(manualCandidates.map((c) => [c.id, c]));
+    updateManualReviewUi();
+    renderManualPreview();
+  });
+  deselectAllBtn.addEventListener("click", () => {
+    manualSelection = /* @__PURE__ */ new Map();
+    updateManualReviewUi();
+    renderManualPreview();
+  });
+  manualList.addEventListener("click", (event) => {
+    const target = event.target;
+    const groupHeader = target.closest(".pii-group-header");
+    if (!groupHeader) {
+      return;
+    }
+    if (target.classList.contains("pii-group-checkbox")) {
+      return;
+    }
+    const group2 = groupHeader.closest(".pii-group");
+    if (group2) {
+      group2.classList.toggle("collapsed");
+    }
+  });
+  manualList.addEventListener("change", (event) => {
+    const target = event.target;
+    if (target.classList.contains("pii-group-checkbox")) {
+      const groupType = target.dataset.groupType ?? "";
+      const groupCandidates = manualCandidates.filter((c) => c.match.type === groupType);
+      if (target.checked) {
+        for (const c of groupCandidates) {
+          manualSelection.set(c.id, c);
+        }
+      } else {
+        for (const c of groupCandidates) {
+          manualSelection.delete(c.id);
+        }
+      }
+      updateManualReviewUi();
+      renderManualPreview();
+      return;
+    }
+  });
   autoCleanBtn.addEventListener("click", () => {
     if (!currentFileContent) {
       setStatus("Upload a supported file to sanitize first.", "warning");
@@ -53764,6 +54024,7 @@ section.${c}>footer { z-index: 1; }
     downloadSanitizedFile();
   });
   wirePreviewScrollSync();
+  fileInput.accept = FILE_INPUT_ACCEPT;
   void initializeUiPreferences();
   function mustGet(id) {
     const element = document.getElementById(id);
@@ -53856,6 +54117,8 @@ section.${c}>footer { z-index: 1; }
     manualSelection = /* @__PURE__ */ new Map();
     manualCandidates = [];
     pendingPopupCandidateIds = [];
+    requiresManualExportOverride = false;
+    pendingManualOverrideHighRiskCount = 0;
     hideManualSelectionPopup();
     autoModeRadios.forEach((radio) => {
       radio.disabled = false;
@@ -53891,6 +54154,8 @@ section.${c}>footer { z-index: 1; }
     manualSelection = /* @__PURE__ */ new Map();
     manualCandidates = [];
     pendingPopupCandidateIds = [];
+    requiresManualExportOverride = false;
+    pendingManualOverrideHighRiskCount = 0;
     hideManualSelectionPopup();
     autoCleanBtn.disabled = true;
     manualCleanBtn.disabled = true;
@@ -53903,7 +54168,12 @@ section.${c}>footer { z-index: 1; }
   }
   async function processFile(file) {
     clearStatus();
-    if (file.size > 10 * 1024 * 1024) {
+    const preflightError = validateUploadPreflight(file);
+    if (preflightError) {
+      setStatus(preflightError, "error");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
       setStatus("File too large. Maximum size is 10 MB.", "error");
       return;
     }
@@ -53923,7 +54193,7 @@ section.${c}>footer { z-index: 1; }
   }
   async function displayDecodedFile(file) {
     try {
-      const decoded = await decodeUploadedFile(file);
+      const decoded = await withTimeout(decodeUploadedFile(file), DECODE_TIMEOUT_MS, "File decode");
       currentDecodedFile = decoded;
       if (decoded.kind === "unsupported") {
         currentFileContent = null;
@@ -53975,9 +54245,10 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
         updateManualReviewUi();
         updateManualHelperText();
       }
-      if (!decoded.canSanitizePreservingFormat) {
+      if (decoded.sanitizationCapability !== "preserve-format") {
+        const detectOnlyMessage = decoded.kind === "pdf" ? pdfRedactionEngine.getSupport().message : decoded.unsupportedReason ?? "Preserve-format sanitization is unavailable for this file type.";
         sanitizedPreview.classList.remove("docx-layout");
-        sanitizedPreview.innerHTML = `<pre>${decoded.unsupportedReason ?? "Preserve-format sanitization is not available for this file type yet."}</pre>`;
+        sanitizedPreview.innerHTML = `<pre>${detectOnlyMessage}</pre>`;
         autoModeRadios.forEach((radio) => {
           radio.checked = false;
           radio.disabled = true;
@@ -53993,8 +54264,8 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
         manualSelection = /* @__PURE__ */ new Map();
         manualCandidates = [];
         updateManualReviewUi();
-        updateManualHelperText("Manual review is unavailable for this file type.");
-        setStatus(decoded.unsupportedReason ?? "Preserve-format sanitization is unavailable for this file type.", "warning");
+        updateManualHelperText(decoded.kind === "pdf" ? "PDF is in detect-only mode until object-level redaction is available." : "Manual review is unavailable for this file type.");
+        setStatus(detectOnlyMessage, "warning");
         showPreview();
         return;
       }
@@ -54010,7 +54281,8 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       setStatus("Preview ready. Select mode if needed, then click Clean.", "warning");
     } catch (error) {
       console.error("Error reading file:", error);
-      setStatus("Error reading file. Please try again.", "error");
+      const reason = error instanceof Error ? error.message : "Please try again.";
+      setStatus(`Error reading file. ${reason}`, "error");
     }
   }
   async function displayImage(file) {
@@ -54076,22 +54348,6 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     }
     return padded;
   }
-  function containsResidualRisk(matches) {
-    const blockedKeys = /* @__PURE__ */ new Set([
-      "ssn",
-      "creditCard",
-      "bankAccount",
-      "routingNumber",
-      "cvv",
-      "cardExpiry",
-      "fullNameContextual",
-      "email",
-      "phone",
-      "driversLicense",
-      "dob"
-    ]);
-    return matches.some((match) => blockedKeys.has(match.key));
-  }
   function formatLeakDetails(matches) {
     if (matches.length === 0) {
       return "";
@@ -54102,6 +54358,12 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     }
     const sample2 = first2.value.length > 48 ? `${first2.value.slice(0, 48)}\u2026` : first2.value;
     return ` First unresolved field: ${first2.type} (${sample2}).`;
+  }
+  function applyCsvOutputHardening(text) {
+    if (fileType !== "csv") {
+      return { text, updatedCells: 0 };
+    }
+    return neutralizeCsvFormulaInjection(text);
   }
   function sanitizePlainText(inputText, mode) {
     const matches = detectMatches(inputText, PII_PATTERNS).sort((a, b) => b.index - a.index);
@@ -54211,6 +54473,11 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
   async function sanitizeDocxPreservingFormat(file, mode, selectedOccurrences) {
     const buffer = await file.arrayBuffer();
     const zip = await import_jszip2.default.loadAsync(buffer);
+    const unsafeEntries = detectUnsafeDocxEntryPaths(Object.keys(zip.files));
+    if (unsafeEntries.length > 0) {
+      throw new Error(`Unsafe DOCX content detected (${unsafeEntries.slice(0, 3).join(", ")}).`);
+    }
+    const strippedMetadataFields = await scrubDocxMetadata(zip);
     const xmlTargets = Object.keys(zip.files).filter(
       (path) => /^word\/(document|header\d+|footer\d+|footnotes|endnotes|comments)\.xml$/i.test(path)
     );
@@ -54280,8 +54547,57 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       blob: resultBlob,
       previewText: cleanedTextParts.join("\n"),
       replacements: totalReplacements,
-      unchangedMatches
+      unchangedMatches,
+      strippedMetadataFields
     };
+  }
+  async function scrubDocxMetadata(zip) {
+    const metadataPaths = ["docProps/core.xml", "docProps/app.xml", "docProps/custom.xml"];
+    const parser = new DOMParser();
+    const serializer = new XMLSerializer();
+    let strippedFields = 0;
+    for (const metadataPath of metadataPaths) {
+      const entry = zip.file(metadataPath);
+      if (!entry) {
+        continue;
+      }
+      const xml = await entry.async("string");
+      const doc = parser.parseFromString(xml, "application/xml");
+      if (doc.getElementsByTagName("parsererror").length > 0) {
+        continue;
+      }
+      const nodes = Array.from(doc.getElementsByTagName("*"));
+      for (const node of nodes) {
+        const hasElementChildren = Array.from(node.childNodes).some((child) => child.nodeType === Node.ELEMENT_NODE);
+        if (hasElementChildren) {
+          continue;
+        }
+        const existingText = node.textContent ?? "";
+        if (existingText.trim().length > 0) {
+          node.textContent = "";
+          strippedFields += 1;
+        }
+      }
+      zip.file(metadataPath, serializer.serializeToString(doc));
+    }
+    const commentsEntry = zip.file("word/comments.xml");
+    if (commentsEntry) {
+      const commentsXml = await commentsEntry.async("string");
+      const commentsDoc = parser.parseFromString(commentsXml, "application/xml");
+      if (commentsDoc.getElementsByTagName("parsererror").length === 0) {
+        const comments = Array.from(commentsDoc.getElementsByTagName("*")).filter((element) => element.localName === "comment");
+        for (const comment of comments) {
+          ["w:author", "w:initials", "w:date"].forEach((attributeName) => {
+            if (comment.hasAttribute(attributeName)) {
+              comment.setAttribute(attributeName, "");
+              strippedFields += 1;
+            }
+          });
+        }
+        zip.file("word/comments.xml", serializer.serializeToString(commentsDoc));
+      }
+    }
+    return strippedFields;
   }
   async function renderDocxPreview(container, source) {
     container.innerHTML = "";
@@ -54308,7 +54624,7 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       setStatus("Image sanitization is not supported yet. Please upload text, CSV, or DOCX.", "warning");
       return;
     }
-    if (currentDecodedFile && !currentDecodedFile.canSanitizePreservingFormat) {
+    if (currentDecodedFile && currentDecodedFile.sanitizationCapability !== "preserve-format") {
       setStatus(currentDecodedFile.unsupportedReason ?? "Preserve-format sanitization is not available for this file type yet.", "warning");
       return;
     }
@@ -54318,32 +54634,45 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
         return;
       }
       try {
-        const { blob, previewText, replacements: replacements2, unchangedMatches: unchangedMatches2 } = await sanitizeDocxPreservingFormat(currentFile, mode);
+        const { blob, previewText, replacements: replacements2, unchangedMatches: unchangedMatches2, strippedMetadataFields } = await withTimeout(
+          sanitizeDocxPreservingFormat(currentFile, mode),
+          DOCX_SANITIZE_TIMEOUT_MS,
+          "DOCX sanitization"
+        );
         const residualMatches2 = detectMatches(previewText, PII_PATTERNS);
-        const shouldBlock2 = mode === "hide" ? containsResidualRisk(residualMatches2) : unchangedMatches2.length > 0;
+        const highRiskResidual2 = filterHighRiskResidual(residualMatches2);
+        const highRiskUnchanged2 = filterHighRiskResidual(unchangedMatches2);
+        const shouldBlock2 = mode === "hide" ? highRiskResidual2.length > 0 : highRiskUnchanged2.length > 0;
         if (shouldBlock2) {
+          requiresManualExportOverride = false;
+          pendingManualOverrideHighRiskCount = 0;
           sanitizedBlob = null;
           sanitizedContent = previewText;
           downloadBtn.disabled = true;
           await renderDocxPreview(sanitizedPreview, blob);
-          const issueCount = mode === "hide" ? residualMatches2.length : unchangedMatches2.length;
-          const leakDetails = mode === "replace" ? formatLeakDetails(unchangedMatches2) : "";
+          const issueCount = mode === "hide" ? highRiskResidual2.length : highRiskUnchanged2.length;
+          const leakDetails = mode === "replace" ? formatLeakDetails(highRiskUnchanged2) : "";
           setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.${leakDetails}`, "error");
           return;
         }
         sanitizedBlob = blob;
         sanitizedContent = previewText;
+        requiresManualExportOverride = false;
+        pendingManualOverrideHighRiskCount = 0;
         await renderDocxPreview(sanitizedPreview, blob);
         downloadBtn.disabled = false;
         if (replacements2 === 0) {
-          setStatus(autoTriggered ? "No sensitive data detected. Document appears clean." : "No sensitive data detected. Document appears clean.", "success");
+          const metadataNote = strippedMetadataFields > 0 ? ` Metadata scrubbed (${strippedMetadataFields} fields).` : "";
+          setStatus(`No sensitive data detected. Document appears clean.${metadataNote}`.trim(), "success");
         } else {
-          setStatus(autoTriggered ? `Auto-sanitized DOCX in ${mode} mode. Updated ${replacements2} sensitive instance(s).` : `Sanitized DOCX in ${mode} mode. Updated ${replacements2} sensitive instance(s).`, "success");
+          const metadataNote = strippedMetadataFields > 0 ? ` Metadata scrubbed (${strippedMetadataFields} fields).` : "";
+          setStatus(autoTriggered ? `Auto-sanitized DOCX in ${mode} mode. Updated ${replacements2} sensitive instance(s).${metadataNote}` : `Sanitized DOCX in ${mode} mode. Updated ${replacements2} sensitive instance(s).${metadataNote}`, "success");
         }
         return;
       } catch (error) {
         console.error("DOCX sanitization failed:", error);
-        setStatus("Could not sanitize DOCX while preserving format. The file may be encrypted or malformed.", "error");
+        const reason = error instanceof Error ? error.message : "The file may be encrypted or malformed.";
+        setStatus(`Could not sanitize DOCX while preserving format. ${reason}`, "error");
         return;
       }
     }
@@ -54351,28 +54680,40 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     const inputText = currentFileContent;
     const { cleanedText, replacements, unchangedMatches } = sanitizePlainText(inputText, mode);
     const residualMatches = detectMatches(cleanedText, PII_PATTERNS);
+    const highRiskResidual = filterHighRiskResidual(residualMatches);
+    const highRiskUnchanged = filterHighRiskResidual(unchangedMatches);
     sanitizedBlob = null;
-    const shouldBlock = mode === "hide" ? containsResidualRisk(residualMatches) : unchangedMatches.length > 0;
+    const shouldBlock = mode === "hide" ? highRiskResidual.length > 0 : highRiskUnchanged.length > 0;
+    const hardenedBlockedOutput = applyCsvOutputHardening(cleanedText);
     if (shouldBlock) {
-      sanitizedContent = cleanedText;
-      sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
+      requiresManualExportOverride = false;
+      pendingManualOverrideHighRiskCount = 0;
+      sanitizedContent = hardenedBlockedOutput.text;
+      sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(hardenedBlockedOutput.text) : `<pre>${escapeHtml(hardenedBlockedOutput.text)}</pre>`;
       downloadBtn.disabled = true;
-      const issueCount = mode === "hide" ? residualMatches.length : unchangedMatches.length;
-      const leakDetails = mode === "replace" ? formatLeakDetails(unchangedMatches) : "";
+      const issueCount = mode === "hide" ? highRiskResidual.length : highRiskUnchanged.length;
+      const leakDetails = mode === "replace" ? formatLeakDetails(highRiskUnchanged) : "";
       setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.${leakDetails}`, "error");
       return;
     }
+    const autoOutput = replacements === 0 ? inputText : cleanedText;
+    const hardenedOutput = applyCsvOutputHardening(autoOutput);
+    const csvSafetyNote = hardenedOutput.updatedCells > 0 ? ` CSV safety hardened ${hardenedOutput.updatedCells} formula-like cell(s).` : "";
     if (replacements === 0) {
-      sanitizedContent = inputText;
-      sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(inputText) : `<pre>${escapeHtml(inputText)}</pre>`;
+      sanitizedContent = hardenedOutput.text;
+      requiresManualExportOverride = false;
+      pendingManualOverrideHighRiskCount = 0;
+      sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(hardenedOutput.text) : `<pre>${escapeHtml(hardenedOutput.text)}</pre>`;
       downloadBtn.disabled = false;
-      setStatus("No sensitive data detected. File appears clean.", "success");
+      setStatus(`No sensitive data detected. File appears clean.${csvSafetyNote}`.trim(), "success");
       return;
     }
-    sanitizedContent = cleanedText;
-    sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
+    sanitizedContent = hardenedOutput.text;
+    requiresManualExportOverride = false;
+    pendingManualOverrideHighRiskCount = 0;
+    sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(hardenedOutput.text) : `<pre>${escapeHtml(hardenedOutput.text)}</pre>`;
     downloadBtn.disabled = false;
-    setStatus(autoTriggered ? `Auto-sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).` : `Sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).`, "success");
+    setStatus(autoTriggered ? `Auto-sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).${csvSafetyNote}` : `Sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).${csvSafetyNote}`, "success");
   }
   async function performManualClean() {
     if (!currentFileContent) {
@@ -54395,43 +54736,67 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       }
       try {
         const selectionTarget = buildSelectedOccurrences(selectedCandidates);
-        const { blob, previewText, replacements: replacements2, unchangedMatches: unchangedMatches2 } = await sanitizeDocxPreservingFormat(currentFile, selectedAutoMode, selectionTarget);
-        if (selectedAutoMode === "replace" && unchangedMatches2.length > 0) {
+        const { blob, previewText, replacements: replacements2, unchangedMatches: unchangedMatches2, strippedMetadataFields } = await withTimeout(
+          sanitizeDocxPreservingFormat(currentFile, selectedAutoMode, selectionTarget),
+          DOCX_SANITIZE_TIMEOUT_MS,
+          "DOCX manual sanitization"
+        );
+        const highRiskUnchanged2 = filterHighRiskResidual(unchangedMatches2);
+        if (selectedAutoMode === "replace" && highRiskUnchanged2.length > 0) {
+          requiresManualExportOverride = false;
+          pendingManualOverrideHighRiskCount = 0;
           sanitizedBlob = null;
           sanitizedContent = previewText;
           downloadBtn.disabled = true;
           await renderDocxPreview(sanitizedPreview, blob);
-          const leakDetails = formatLeakDetails(unchangedMatches2);
-          setStatus(`Manual sanitization blocked: ${unchangedMatches2.length} selected value(s) were not replaced.${leakDetails}`, "error");
+          const leakDetails = formatLeakDetails(highRiskUnchanged2);
+          setStatus(`Manual sanitization blocked: ${highRiskUnchanged2.length} selected value(s) were not replaced.${leakDetails}`, "error");
           return;
         }
         sanitizedBlob = blob;
         sanitizedContent = previewText;
+        const residualHighRisk2 = filterHighRiskResidual(detectMatches(previewText, PII_PATTERNS));
+        requiresManualExportOverride = residualHighRisk2.length > 0;
+        pendingManualOverrideHighRiskCount = residualHighRisk2.length;
         await renderDocxPreview(sanitizedPreview, blob);
         downloadBtn.disabled = false;
         const untouchedCount2 = Math.max(detectedPII.length - replacements2, 0);
-        setStatus(`Applied manual ${selectedAutoMode} to ${replacements2} selection(s). ${untouchedCount2} detected value(s) were left unchanged by choice.`, "success");
+        const metadataNote = strippedMetadataFields > 0 ? ` Metadata scrubbed (${strippedMetadataFields} fields).` : "";
+        const overrideWarning2 = buildManualOverrideWarning(residualHighRisk2.length);
+        const tone2 = residualHighRisk2.length > 0 ? "warning" : "success";
+        setStatus(`Applied manual ${selectedAutoMode} to ${replacements2} selection(s). ${untouchedCount2} detected value(s) were left unchanged by choice.${metadataNote} ${overrideWarning2}`.trim(), tone2);
         return;
       } catch (error) {
         console.error("Manual DOCX sanitization failed:", error);
-        setStatus("Could not apply manual sanitization to DOCX while preserving format.", "error");
+        const reason = error instanceof Error ? error.message : "Unknown DOCX processing error.";
+        setStatus(`Could not apply manual sanitization to DOCX while preserving format. ${reason}`, "error");
         return;
       }
     }
     const selectedMatches = selectedCandidates.map((candidate) => candidate.match);
     const { cleanedText, replacements, unchangedMatches } = sanitizeBySelectedMatches(currentFileContent, selectedAutoMode, selectedMatches);
-    if (selectedAutoMode === "replace" && unchangedMatches.length > 0) {
-      const leakDetails = formatLeakDetails(unchangedMatches);
-      setStatus(`Manual sanitization blocked: ${unchangedMatches.length} selected value(s) were not replaced.${leakDetails}`, "error");
+    const highRiskUnchanged = filterHighRiskResidual(unchangedMatches);
+    if (selectedAutoMode === "replace" && highRiskUnchanged.length > 0) {
+      requiresManualExportOverride = false;
+      pendingManualOverrideHighRiskCount = 0;
+      const leakDetails = formatLeakDetails(highRiskUnchanged);
+      setStatus(`Manual sanitization blocked: ${highRiskUnchanged.length} selected value(s) were not replaced.${leakDetails}`, "error");
       return;
     }
+    const hardenedOutput = applyCsvOutputHardening(cleanedText);
+    const csvSafetyNote = hardenedOutput.updatedCells > 0 ? ` CSV safety hardened ${hardenedOutput.updatedCells} formula-like cell(s).` : "";
     sanitizedBlob = null;
-    sanitizedContent = cleanedText;
+    sanitizedContent = hardenedOutput.text;
+    const residualHighRisk = filterHighRiskResidual(detectMatches(hardenedOutput.text, PII_PATTERNS));
+    requiresManualExportOverride = residualHighRisk.length > 0;
+    pendingManualOverrideHighRiskCount = residualHighRisk.length;
     sanitizedPreview.classList.remove("docx-layout");
-    sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
+    sanitizedPreview.innerHTML = fileType === "csv" ? csvToTable(hardenedOutput.text) : `<pre>${escapeHtml(hardenedOutput.text)}</pre>`;
     downloadBtn.disabled = false;
     const untouchedCount = Math.max(detectedPII.length - replacements, 0);
-    setStatus(`Applied manual ${selectedAutoMode} to ${replacements} selection(s). ${untouchedCount} detected value(s) were left unchanged by choice.`, "success");
+    const overrideWarning = buildManualOverrideWarning(residualHighRisk.length);
+    const tone = residualHighRisk.length > 0 ? "warning" : "success";
+    setStatus(`Applied manual ${selectedAutoMode} to ${replacements} selection(s). ${untouchedCount} detected value(s) were left unchanged by choice.${csvSafetyNote} ${overrideWarning}`.trim(), tone);
   }
   function matchSignature(match) {
     return `${match.key}::${match.value}`;
@@ -54536,12 +54901,45 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     }
     const selectedCount = manualSelection.size;
     manualSummary.textContent = `${selectedCount} selected of ${manualCandidates.length} detected.`;
-    manualList.innerHTML = manualCandidates.map((candidate) => {
-      const { match, id } = candidate;
-      const checked = manualSelection.has(id) ? "checked" : "";
-      const label = `${match.type}: ${shortValue(match.value)}`;
-      return `<label class="manual-item"><input type="checkbox" data-manual-id="${id}" ${checked}><span class="manual-item-text">${escapeHtml(label)}</span></label>`;
-    }).join("");
+    const groups = /* @__PURE__ */ new Map();
+    for (const candidate of manualCandidates) {
+      const type = candidate.match.type;
+      const list = groups.get(type) ?? [];
+      list.push(candidate);
+      groups.set(type, list);
+    }
+    const collapsedGroups = /* @__PURE__ */ new Set();
+    manualList.querySelectorAll(".pii-group.collapsed").forEach((el) => {
+      const type = el.dataset.groupType;
+      if (type) {
+        collapsedGroups.add(type);
+      }
+    });
+    let html = "";
+    for (const [type, candidates] of groups) {
+      const groupSelectedCount = candidates.filter((c) => manualSelection.has(c.id)).length;
+      const allSelected = groupSelectedCount === candidates.length;
+      const someSelected = groupSelectedCount > 0 && !allSelected;
+      const collapsed = collapsedGroups.has(type) ? " collapsed" : "";
+      const checkedAttr = allSelected ? " checked" : "";
+      html += `<div class="pii-group${collapsed}" data-group-type="${escapeHtml(type)}">`;
+      html += `<div class="pii-group-header">`;
+      html += `<svg class="pii-group-chevron" width="12" height="12" viewBox="0 0 12 12"><path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      html += `<input type="checkbox" class="pii-group-checkbox" data-group-type="${escapeHtml(type)}"${checkedAttr}${someSelected ? ' data-indeterminate="true"' : ""}>`;
+      html += `<span class="pii-group-label">${escapeHtml(type)}</span>`;
+      html += `<span class="pii-group-count">${groupSelectedCount}/${candidates.length}</span>`;
+      html += `</div>`;
+      html += `<div class="pii-group-items">`;
+      for (const candidate of candidates) {
+        const checked = manualSelection.has(candidate.id) ? "checked" : "";
+        html += `<label class="manual-item"><input type="checkbox" data-manual-id="${candidate.id}" ${checked}><span class="manual-item-text">${escapeHtml(shortValue(candidate.match.value))}</span></label>`;
+      }
+      html += `</div></div>`;
+    }
+    manualList.innerHTML = html;
+    manualList.querySelectorAll('.pii-group-checkbox[data-indeterminate="true"]').forEach((cb2) => {
+      cb2.indeterminate = true;
+    });
     manualCleanBtn.disabled = !selectedManualMode || selectedCount === 0;
   }
   function updateManualHelperText(message) {
@@ -54563,6 +54961,16 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     if (!sanitizedContent && !sanitizedBlob) {
       setStatus("No sanitized output is available to download yet.", "warning");
       return;
+    }
+    if (requiresManualExportOverride && pendingManualOverrideHighRiskCount > 0) {
+      const proceed = confirm(
+        `High-risk data is still present (${pendingManualOverrideHighRiskCount} item${pendingManualOverrideHighRiskCount === 1 ? "" : "s"}). Download only if you intentionally accept this risk.`
+      );
+      if (!proceed) {
+        setStatus("Download canceled. Manual override confirmation required when high-risk data remains.", "warning");
+        return;
+      }
+      requiresManualExportOverride = false;
     }
     if (sanitizedBlob) {
       const url2 = URL.createObjectURL(sanitizedBlob);
@@ -54587,7 +54995,7 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     URL.revokeObjectURL(url);
   }
   function csvToTable(csvText) {
-    const parsed = import_papaparse2.default.parse(csvText, {
+    const parsed = import_papaparse3.default.parse(csvText, {
       skipEmptyLines: true
     });
     const rows = parsed.data.map((row) => row.map((cell) => String(cell ?? "")));

@@ -3,8 +3,19 @@ import { PII_PATTERNS } from '../shared/pii/patterns';
 import type { DetectedMatch } from '../shared/types';
 import { generateSafeReplacement } from '../shared/pii/replacement';
 import { decodeUploadedFile } from '../shared/file/registry';
+import { DECODE_TIMEOUT_MS, DOCX_SANITIZE_TIMEOUT_MS, withTimeout } from '../shared/file/security';
+import { createPdfRedactionEngine } from '../shared/file/redaction/pdf/engine';
 import type { DecodedFile } from '../shared/file/types';
 import { getExtension, isImageFile, escapeHtml } from '../shared/file/utils';
+import {
+  buildManualOverrideWarning,
+  detectUnsafeDocxEntryPaths,
+  FILE_INPUT_ACCEPT,
+  filterHighRiskResidual,
+  MAX_UPLOAD_SIZE_BYTES,
+  neutralizeCsvFormulaInjection,
+  validateUploadPreflight
+} from './hardening';
 import Papa from 'papaparse';
 import JSZip from 'jszip';
 import { renderAsync } from 'docx-preview';
@@ -46,6 +57,8 @@ const manualList = mustGet<HTMLElement>('manualList');
 const manualSelectionPopup = mustGet<HTMLElement>('manualSelectionPopup');
 const manualPopupHideBtn = mustGet<HTMLButtonElement>('manualPopupHideBtn');
 const manualPopupReplaceBtn = mustGet<HTMLButtonElement>('manualPopupReplaceBtn');
+const selectAllBtn = mustGet<HTMLButtonElement>('selectAllBtn');
+const deselectAllBtn = mustGet<HTMLButtonElement>('deselectAllBtn');
 
 const autoModeRadios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="autoMode"]'));
 const manualModeRadios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="manualMode"]'));
@@ -65,6 +78,9 @@ let selectedManualMode: ManualMode = '';
 let manualSelection = new Map<string, ManualCandidate>();
 let manualCandidates: ManualCandidate[] = [];
 let pendingPopupCandidateIds: string[] = [];
+let requiresManualExportOverride = false;
+let pendingManualOverrideHighRiskCount = 0;
+const pdfRedactionEngine = createPdfRedactionEngine();
 
 uploadZone.addEventListener('click', () => {
   fileInput.click();
@@ -228,6 +244,56 @@ manualPopupReplaceBtn.addEventListener('click', () => {
   applyPopupSelection('replace');
 });
 
+selectAllBtn.addEventListener('click', () => {
+  manualSelection = new Map(manualCandidates.map((c) => [c.id, c]));
+  updateManualReviewUi();
+  renderManualPreview();
+});
+
+deselectAllBtn.addEventListener('click', () => {
+  manualSelection = new Map<string, ManualCandidate>();
+  updateManualReviewUi();
+  renderManualPreview();
+});
+
+manualList.addEventListener('click', (event) => {
+  const target = event.target as HTMLElement;
+  const groupHeader = target.closest<HTMLElement>('.pii-group-header');
+  if (!groupHeader) {
+    return;
+  }
+
+  // If the click was on the checkbox itself, handle group toggle instead of collapse
+  if (target.classList.contains('pii-group-checkbox')) {
+    return;
+  }
+
+  const group = groupHeader.closest<HTMLElement>('.pii-group');
+  if (group) {
+    group.classList.toggle('collapsed');
+  }
+});
+
+manualList.addEventListener('change', (event) => {
+  const target = event.target as HTMLInputElement;
+  if (target.classList.contains('pii-group-checkbox')) {
+    const groupType = target.dataset.groupType ?? '';
+    const groupCandidates = manualCandidates.filter((c) => c.match.type === groupType);
+    if (target.checked) {
+      for (const c of groupCandidates) {
+        manualSelection.set(c.id, c);
+      }
+    } else {
+      for (const c of groupCandidates) {
+        manualSelection.delete(c.id);
+      }
+    }
+    updateManualReviewUi();
+    renderManualPreview();
+    return;
+  }
+});
+
 autoCleanBtn.addEventListener('click', () => {
   if (!currentFileContent) {
     setStatus('Upload a supported file to sanitize first.', 'warning');
@@ -251,6 +317,7 @@ downloadBtn.addEventListener('click', () => {
 });
 
 wirePreviewScrollSync();
+fileInput.accept = FILE_INPUT_ACCEPT;
 void initializeUiPreferences();
 
 function mustGet<T extends HTMLElement>(id: string): T {
@@ -364,6 +431,8 @@ function clearEverything(): void {
   manualSelection = new Map<string, ManualCandidate>();
   manualCandidates = [];
   pendingPopupCandidateIds = [];
+  requiresManualExportOverride = false;
+  pendingManualOverrideHighRiskCount = 0;
   hideManualSelectionPopup();
 
   autoModeRadios.forEach((radio) => {
@@ -405,6 +474,8 @@ function resetControlStateForNewFile(): void {
   manualSelection = new Map<string, ManualCandidate>();
   manualCandidates = [];
   pendingPopupCandidateIds = [];
+  requiresManualExportOverride = false;
+  pendingManualOverrideHighRiskCount = 0;
   hideManualSelectionPopup();
   autoCleanBtn.disabled = true;
   manualCleanBtn.disabled = true;
@@ -419,7 +490,13 @@ function resetControlStateForNewFile(): void {
 async function processFile(file: File): Promise<void> {
   clearStatus();
 
-  if (file.size > 10 * 1024 * 1024) {
+  const preflightError = validateUploadPreflight(file);
+  if (preflightError) {
+    setStatus(preflightError, 'error');
+    return;
+  }
+
+  if (file.size > MAX_UPLOAD_SIZE_BYTES) {
     setStatus('File too large. Maximum size is 10 MB.', 'error');
     return;
   }
@@ -445,7 +522,7 @@ async function processFile(file: File): Promise<void> {
 
 async function displayDecodedFile(file: File): Promise<void> {
   try {
-    const decoded = await decodeUploadedFile(file);
+    const decoded = await withTimeout(decodeUploadedFile(file), DECODE_TIMEOUT_MS, 'File decode');
     currentDecodedFile = decoded;
 
     if (decoded.kind === 'unsupported') {
@@ -500,9 +577,12 @@ async function displayDecodedFile(file: File): Promise<void> {
       updateManualHelperText();
     }
 
-    if (!decoded.canSanitizePreservingFormat) {
+    if (decoded.sanitizationCapability !== 'preserve-format') {
+      const detectOnlyMessage = decoded.kind === 'pdf'
+        ? pdfRedactionEngine.getSupport().message
+        : (decoded.unsupportedReason ?? 'Preserve-format sanitization is unavailable for this file type.');
       sanitizedPreview.classList.remove('docx-layout');
-      sanitizedPreview.innerHTML = `<pre>${decoded.unsupportedReason ?? 'Preserve-format sanitization is not available for this file type yet.'}</pre>`;
+      sanitizedPreview.innerHTML = `<pre>${detectOnlyMessage}</pre>`;
       autoModeRadios.forEach((radio) => {
         radio.checked = false;
         radio.disabled = true;
@@ -518,8 +598,8 @@ async function displayDecodedFile(file: File): Promise<void> {
       manualSelection = new Map<string, ManualCandidate>();
       manualCandidates = [];
       updateManualReviewUi();
-      updateManualHelperText('Manual review is unavailable for this file type.');
-      setStatus(decoded.unsupportedReason ?? 'Preserve-format sanitization is unavailable for this file type.', 'warning');
+      updateManualHelperText(decoded.kind === 'pdf' ? 'PDF is in detect-only mode until object-level redaction is available.' : 'Manual review is unavailable for this file type.');
+      setStatus(detectOnlyMessage, 'warning');
       showPreview();
       return;
     }
@@ -538,7 +618,8 @@ async function displayDecodedFile(file: File): Promise<void> {
     setStatus('Preview ready. Select mode if needed, then click Clean.', 'warning');
   } catch (error) {
     console.error('Error reading file:', error);
-    setStatus('Error reading file. Please try again.', 'error');
+    const reason = error instanceof Error ? error.message : 'Please try again.';
+    setStatus(`Error reading file. ${reason}`, 'error');
   }
 }
 
@@ -614,24 +695,6 @@ function fitReplacementLength(replacement: string, sourceValue: string): string 
   return padded;
 }
 
-function containsResidualRisk(matches: DetectedMatch[]): boolean {
-  const blockedKeys = new Set([
-    'ssn',
-    'creditCard',
-    'bankAccount',
-    'routingNumber',
-    'cvv',
-    'cardExpiry',
-    'fullNameContextual',
-    'email',
-    'phone',
-    'driversLicense',
-    'dob'
-  ]);
-
-  return matches.some((match) => blockedKeys.has(match.key));
-}
-
 function formatLeakDetails(matches: DetectedMatch[]): string {
   if (matches.length === 0) {
     return '';
@@ -643,6 +706,14 @@ function formatLeakDetails(matches: DetectedMatch[]): string {
   }
   const sample = first.value.length > 48 ? `${first.value.slice(0, 48)}…` : first.value;
   return ` First unresolved field: ${first.type} (${sample}).`;
+}
+
+function applyCsvOutputHardening(text: string): { text: string; updatedCells: number } {
+  if (fileType !== 'csv') {
+    return { text, updatedCells: 0 };
+  }
+
+  return neutralizeCsvFormulaInjection(text);
 }
 
 function sanitizePlainText(inputText: string, mode: AutoMode): {
@@ -785,9 +856,16 @@ async function sanitizeDocxPreservingFormat(file: File, mode: AutoMode, selected
   previewText: string;
   replacements: number;
   unchangedMatches: DetectedMatch[];
+  strippedMetadataFields: number;
 }> {
   const buffer = await file.arrayBuffer();
   const zip = await JSZip.loadAsync(buffer);
+  const unsafeEntries = detectUnsafeDocxEntryPaths(Object.keys(zip.files));
+  if (unsafeEntries.length > 0) {
+    throw new Error(`Unsafe DOCX content detected (${unsafeEntries.slice(0, 3).join(', ')}).`);
+  }
+
+  const strippedMetadataFields = await scrubDocxMetadata(zip);
   const xmlTargets = Object.keys(zip.files).filter((path) =>
     /^word\/(document|header\d+|footer\d+|footnotes|endnotes|comments)\.xml$/i.test(path)
   );
@@ -874,8 +952,65 @@ async function sanitizeDocxPreservingFormat(file: File, mode: AutoMode, selected
     blob: resultBlob,
     previewText: cleanedTextParts.join('\n'),
     replacements: totalReplacements,
-    unchangedMatches
+    unchangedMatches,
+    strippedMetadataFields
   };
+}
+
+async function scrubDocxMetadata(zip: JSZip): Promise<number> {
+  const metadataPaths = ['docProps/core.xml', 'docProps/app.xml', 'docProps/custom.xml'];
+  const parser = new DOMParser();
+  const serializer = new XMLSerializer();
+  let strippedFields = 0;
+
+  for (const metadataPath of metadataPaths) {
+    const entry = zip.file(metadataPath);
+    if (!entry) {
+      continue;
+    }
+
+    const xml = await entry.async('string');
+    const doc = parser.parseFromString(xml, 'application/xml');
+    if (doc.getElementsByTagName('parsererror').length > 0) {
+      continue;
+    }
+
+    const nodes = Array.from(doc.getElementsByTagName('*'));
+    for (const node of nodes) {
+      const hasElementChildren = Array.from(node.childNodes).some((child) => child.nodeType === Node.ELEMENT_NODE);
+      if (hasElementChildren) {
+        continue;
+      }
+
+      const existingText = node.textContent ?? '';
+      if (existingText.trim().length > 0) {
+        node.textContent = '';
+        strippedFields += 1;
+      }
+    }
+
+    zip.file(metadataPath, serializer.serializeToString(doc));
+  }
+
+  const commentsEntry = zip.file('word/comments.xml');
+  if (commentsEntry) {
+    const commentsXml = await commentsEntry.async('string');
+    const commentsDoc = parser.parseFromString(commentsXml, 'application/xml');
+    if (commentsDoc.getElementsByTagName('parsererror').length === 0) {
+      const comments = Array.from(commentsDoc.getElementsByTagName('*')).filter((element) => element.localName === 'comment');
+      for (const comment of comments) {
+        ['w:author', 'w:initials', 'w:date'].forEach((attributeName) => {
+          if (comment.hasAttribute(attributeName)) {
+            comment.setAttribute(attributeName, '');
+            strippedFields += 1;
+          }
+        });
+      }
+      zip.file('word/comments.xml', serializer.serializeToString(commentsDoc));
+    }
+  }
+
+  return strippedFields;
 }
 
 async function renderDocxPreview(container: HTMLElement, source: Blob): Promise<void> {
@@ -908,7 +1043,7 @@ async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise
     return;
   }
 
-  if (currentDecodedFile && !currentDecodedFile.canSanitizePreservingFormat) {
+  if (currentDecodedFile && currentDecodedFile.sanitizationCapability !== 'preserve-format') {
     setStatus(currentDecodedFile.unsupportedReason ?? 'Preserve-format sanitization is not available for this file type yet.', 'warning');
     return;
   }
@@ -920,39 +1055,52 @@ async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise
     }
 
     try {
-      const { blob, previewText, replacements, unchangedMatches } = await sanitizeDocxPreservingFormat(currentFile, mode);
+      const { blob, previewText, replacements, unchangedMatches, strippedMetadataFields } = await withTimeout(
+        sanitizeDocxPreservingFormat(currentFile, mode),
+        DOCX_SANITIZE_TIMEOUT_MS,
+        'DOCX sanitization'
+      );
       const residualMatches = detectMatches(previewText, PII_PATTERNS);
+      const highRiskResidual = filterHighRiskResidual(residualMatches);
+      const highRiskUnchanged = filterHighRiskResidual(unchangedMatches);
       const shouldBlock = mode === 'hide'
-        ? containsResidualRisk(residualMatches)
-        : unchangedMatches.length > 0;
+        ? highRiskResidual.length > 0
+        : highRiskUnchanged.length > 0;
 
       if (shouldBlock) {
+        requiresManualExportOverride = false;
+        pendingManualOverrideHighRiskCount = 0;
         sanitizedBlob = null;
         sanitizedContent = previewText;
         downloadBtn.disabled = true;
         await renderDocxPreview(sanitizedPreview, blob);
-        const issueCount = mode === 'hide' ? residualMatches.length : unchangedMatches.length;
-        const leakDetails = mode === 'replace' ? formatLeakDetails(unchangedMatches) : '';
+        const issueCount = mode === 'hide' ? highRiskResidual.length : highRiskUnchanged.length;
+        const leakDetails = mode === 'replace' ? formatLeakDetails(highRiskUnchanged) : '';
         setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.${leakDetails}`, 'error');
         return;
       }
 
       sanitizedBlob = blob;
       sanitizedContent = previewText;
+      requiresManualExportOverride = false;
+      pendingManualOverrideHighRiskCount = 0;
       await renderDocxPreview(sanitizedPreview, blob);
       downloadBtn.disabled = false;
 
       if (replacements === 0) {
-        setStatus(autoTriggered ? 'No sensitive data detected. Document appears clean.' : 'No sensitive data detected. Document appears clean.', 'success');
+        const metadataNote = strippedMetadataFields > 0 ? ` Metadata scrubbed (${strippedMetadataFields} fields).` : '';
+        setStatus(`No sensitive data detected. Document appears clean.${metadataNote}`.trim(), 'success');
       } else {
+        const metadataNote = strippedMetadataFields > 0 ? ` Metadata scrubbed (${strippedMetadataFields} fields).` : '';
         setStatus(autoTriggered
-          ? `Auto-sanitized DOCX in ${mode} mode. Updated ${replacements} sensitive instance(s).`
-          : `Sanitized DOCX in ${mode} mode. Updated ${replacements} sensitive instance(s).`, 'success');
+          ? `Auto-sanitized DOCX in ${mode} mode. Updated ${replacements} sensitive instance(s).${metadataNote}`
+          : `Sanitized DOCX in ${mode} mode. Updated ${replacements} sensitive instance(s).${metadataNote}`, 'success');
       }
       return;
     } catch (error) {
       console.error('DOCX sanitization failed:', error);
-      setStatus('Could not sanitize DOCX while preserving format. The file may be encrypted or malformed.', 'error');
+      const reason = error instanceof Error ? error.message : 'The file may be encrypted or malformed.';
+      setStatus(`Could not sanitize DOCX while preserving format. ${reason}`, 'error');
       return;
     }
   }
@@ -962,37 +1110,51 @@ async function performAutoClean(mode: AutoMode, autoTriggered: boolean): Promise
   const inputText = currentFileContent;
   const { cleanedText, replacements, unchangedMatches } = sanitizePlainText(inputText, mode);
   const residualMatches = detectMatches(cleanedText, PII_PATTERNS);
+  const highRiskResidual = filterHighRiskResidual(residualMatches);
+  const highRiskUnchanged = filterHighRiskResidual(unchangedMatches);
   sanitizedBlob = null;
 
   const shouldBlock = mode === 'hide'
-    ? containsResidualRisk(residualMatches)
-    : unchangedMatches.length > 0;
+    ? highRiskResidual.length > 0
+    : highRiskUnchanged.length > 0;
+
+  const hardenedBlockedOutput = applyCsvOutputHardening(cleanedText);
 
   if (shouldBlock) {
-    sanitizedContent = cleanedText;
-    sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
+    requiresManualExportOverride = false;
+    pendingManualOverrideHighRiskCount = 0;
+    sanitizedContent = hardenedBlockedOutput.text;
+    sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(hardenedBlockedOutput.text) : `<pre>${escapeHtml(hardenedBlockedOutput.text)}</pre>`;
     downloadBtn.disabled = true;
-    const issueCount = mode === 'hide' ? residualMatches.length : unchangedMatches.length;
-    const leakDetails = mode === 'replace' ? formatLeakDetails(unchangedMatches) : '';
+    const issueCount = mode === 'hide' ? highRiskResidual.length : highRiskUnchanged.length;
+    const leakDetails = mode === 'replace' ? formatLeakDetails(highRiskUnchanged) : '';
     setStatus(`Sanitization blocked: ${issueCount} original sensitive value(s) still present after cleaning.${leakDetails}`, 'error');
     return;
   }
 
+  const autoOutput = replacements === 0 ? inputText : cleanedText;
+  const hardenedOutput = applyCsvOutputHardening(autoOutput);
+  const csvSafetyNote = hardenedOutput.updatedCells > 0 ? ` CSV safety hardened ${hardenedOutput.updatedCells} formula-like cell(s).` : '';
+
   if (replacements === 0) {
-    sanitizedContent = inputText;
-    sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(inputText) : `<pre>${escapeHtml(inputText)}</pre>`;
+    sanitizedContent = hardenedOutput.text;
+    requiresManualExportOverride = false;
+    pendingManualOverrideHighRiskCount = 0;
+    sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(hardenedOutput.text) : `<pre>${escapeHtml(hardenedOutput.text)}</pre>`;
     downloadBtn.disabled = false;
-    setStatus('No sensitive data detected. File appears clean.', 'success');
+    setStatus(`No sensitive data detected. File appears clean.${csvSafetyNote}`.trim(), 'success');
     return;
   }
 
-  sanitizedContent = cleanedText;
-  sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
+  sanitizedContent = hardenedOutput.text;
+  requiresManualExportOverride = false;
+  pendingManualOverrideHighRiskCount = 0;
+  sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(hardenedOutput.text) : `<pre>${escapeHtml(hardenedOutput.text)}</pre>`;
   downloadBtn.disabled = false;
 
   setStatus(autoTriggered
-    ? `Auto-sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).`
-    : `Sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).`, 'success');
+    ? `Auto-sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).${csvSafetyNote}`
+    : `Sanitized file in ${mode} mode. Updated ${replacements} sensitive instance(s).${csvSafetyNote}`, 'success');
 }
 
 async function performManualClean(): Promise<void> {
@@ -1020,29 +1182,43 @@ async function performManualClean(): Promise<void> {
 
     try {
       const selectionTarget = buildSelectedOccurrences(selectedCandidates);
-      const { blob, previewText, replacements, unchangedMatches } = await sanitizeDocxPreservingFormat(currentFile, selectedAutoMode, selectionTarget);
+      const { blob, previewText, replacements, unchangedMatches, strippedMetadataFields } = await withTimeout(
+        sanitizeDocxPreservingFormat(currentFile, selectedAutoMode, selectionTarget),
+        DOCX_SANITIZE_TIMEOUT_MS,
+        'DOCX manual sanitization'
+      );
+      const highRiskUnchanged = filterHighRiskResidual(unchangedMatches);
 
-      if (selectedAutoMode === 'replace' && unchangedMatches.length > 0) {
+      if (selectedAutoMode === 'replace' && highRiskUnchanged.length > 0) {
+        requiresManualExportOverride = false;
+        pendingManualOverrideHighRiskCount = 0;
         sanitizedBlob = null;
         sanitizedContent = previewText;
         downloadBtn.disabled = true;
         await renderDocxPreview(sanitizedPreview, blob);
-        const leakDetails = formatLeakDetails(unchangedMatches);
-        setStatus(`Manual sanitization blocked: ${unchangedMatches.length} selected value(s) were not replaced.${leakDetails}`, 'error');
+        const leakDetails = formatLeakDetails(highRiskUnchanged);
+        setStatus(`Manual sanitization blocked: ${highRiskUnchanged.length} selected value(s) were not replaced.${leakDetails}`, 'error');
         return;
       }
 
       sanitizedBlob = blob;
       sanitizedContent = previewText;
+      const residualHighRisk = filterHighRiskResidual(detectMatches(previewText, PII_PATTERNS));
+      requiresManualExportOverride = residualHighRisk.length > 0;
+      pendingManualOverrideHighRiskCount = residualHighRisk.length;
       await renderDocxPreview(sanitizedPreview, blob);
       downloadBtn.disabled = false;
 
       const untouchedCount = Math.max(detectedPII.length - replacements, 0);
-      setStatus(`Applied manual ${selectedAutoMode} to ${replacements} selection(s). ${untouchedCount} detected value(s) were left unchanged by choice.`, 'success');
+      const metadataNote = strippedMetadataFields > 0 ? ` Metadata scrubbed (${strippedMetadataFields} fields).` : '';
+      const overrideWarning = buildManualOverrideWarning(residualHighRisk.length);
+      const tone: StatusTone = residualHighRisk.length > 0 ? 'warning' : 'success';
+      setStatus(`Applied manual ${selectedAutoMode} to ${replacements} selection(s). ${untouchedCount} detected value(s) were left unchanged by choice.${metadataNote} ${overrideWarning}`.trim(), tone);
       return;
     } catch (error) {
       console.error('Manual DOCX sanitization failed:', error);
-      setStatus('Could not apply manual sanitization to DOCX while preserving format.', 'error');
+      const reason = error instanceof Error ? error.message : 'Unknown DOCX processing error.';
+      setStatus(`Could not apply manual sanitization to DOCX while preserving format. ${reason}`, 'error');
       return;
     }
   }
@@ -1050,21 +1226,32 @@ async function performManualClean(): Promise<void> {
   const selectedMatches = selectedCandidates.map((candidate) => candidate.match);
 
   const { cleanedText, replacements, unchangedMatches } = sanitizeBySelectedMatches(currentFileContent, selectedAutoMode, selectedMatches);
+  const highRiskUnchanged = filterHighRiskResidual(unchangedMatches);
 
-  if (selectedAutoMode === 'replace' && unchangedMatches.length > 0) {
-    const leakDetails = formatLeakDetails(unchangedMatches);
-    setStatus(`Manual sanitization blocked: ${unchangedMatches.length} selected value(s) were not replaced.${leakDetails}`, 'error');
+  if (selectedAutoMode === 'replace' && highRiskUnchanged.length > 0) {
+    requiresManualExportOverride = false;
+    pendingManualOverrideHighRiskCount = 0;
+    const leakDetails = formatLeakDetails(highRiskUnchanged);
+    setStatus(`Manual sanitization blocked: ${highRiskUnchanged.length} selected value(s) were not replaced.${leakDetails}`, 'error');
     return;
   }
 
+  const hardenedOutput = applyCsvOutputHardening(cleanedText);
+  const csvSafetyNote = hardenedOutput.updatedCells > 0 ? ` CSV safety hardened ${hardenedOutput.updatedCells} formula-like cell(s).` : '';
+
   sanitizedBlob = null;
-  sanitizedContent = cleanedText;
+  sanitizedContent = hardenedOutput.text;
+  const residualHighRisk = filterHighRiskResidual(detectMatches(hardenedOutput.text, PII_PATTERNS));
+  requiresManualExportOverride = residualHighRisk.length > 0;
+  pendingManualOverrideHighRiskCount = residualHighRisk.length;
   sanitizedPreview.classList.remove('docx-layout');
-  sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(cleanedText) : `<pre>${escapeHtml(cleanedText)}</pre>`;
+  sanitizedPreview.innerHTML = fileType === 'csv' ? csvToTable(hardenedOutput.text) : `<pre>${escapeHtml(hardenedOutput.text)}</pre>`;
   downloadBtn.disabled = false;
 
   const untouchedCount = Math.max(detectedPII.length - replacements, 0);
-  setStatus(`Applied manual ${selectedAutoMode} to ${replacements} selection(s). ${untouchedCount} detected value(s) were left unchanged by choice.`, 'success');
+  const overrideWarning = buildManualOverrideWarning(residualHighRisk.length);
+  const tone: StatusTone = residualHighRisk.length > 0 ? 'warning' : 'success';
+  setStatus(`Applied manual ${selectedAutoMode} to ${replacements} selection(s). ${untouchedCount} detected value(s) were left unchanged by choice.${csvSafetyNote} ${overrideWarning}`.trim(), tone);
 }
 
 function matchSignature(match: DetectedMatch): string {
@@ -1187,12 +1374,54 @@ function updateManualReviewUi(): void {
 
   const selectedCount = manualSelection.size;
   manualSummary.textContent = `${selectedCount} selected of ${manualCandidates.length} detected.`;
-  manualList.innerHTML = manualCandidates.map((candidate) => {
-    const { match, id } = candidate;
-    const checked = manualSelection.has(id) ? 'checked' : '';
-    const label = `${match.type}: ${shortValue(match.value)}`;
-    return `<label class="manual-item"><input type="checkbox" data-manual-id="${id}" ${checked}><span class="manual-item-text">${escapeHtml(label)}</span></label>`;
-  }).join('');
+
+  // Group candidates by PII type
+  const groups = new Map<string, ManualCandidate[]>();
+  for (const candidate of manualCandidates) {
+    const type = candidate.match.type;
+    const list = groups.get(type) ?? [];
+    list.push(candidate);
+    groups.set(type, list);
+  }
+
+  // Preserve collapsed state
+  const collapsedGroups = new Set<string>();
+  manualList.querySelectorAll<HTMLElement>('.pii-group.collapsed').forEach((el) => {
+    const type = el.dataset.groupType;
+    if (type) {
+      collapsedGroups.add(type);
+    }
+  });
+
+  let html = '';
+  for (const [type, candidates] of groups) {
+    const groupSelectedCount = candidates.filter((c) => manualSelection.has(c.id)).length;
+    const allSelected = groupSelectedCount === candidates.length;
+    const someSelected = groupSelectedCount > 0 && !allSelected;
+    const collapsed = collapsedGroups.has(type) ? ' collapsed' : '';
+    const checkedAttr = allSelected ? ' checked' : '';
+
+    html += `<div class="pii-group${collapsed}" data-group-type="${escapeHtml(type)}">`;
+    html += `<div class="pii-group-header">`;
+    html += `<svg class="pii-group-chevron" width="12" height="12" viewBox="0 0 12 12"><path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    html += `<input type="checkbox" class="pii-group-checkbox" data-group-type="${escapeHtml(type)}"${checkedAttr}${someSelected ? ' data-indeterminate="true"' : ''}>`;
+    html += `<span class="pii-group-label">${escapeHtml(type)}</span>`;
+    html += `<span class="pii-group-count">${groupSelectedCount}/${candidates.length}</span>`;
+    html += `</div>`;
+    html += `<div class="pii-group-items">`;
+    for (const candidate of candidates) {
+      const checked = manualSelection.has(candidate.id) ? 'checked' : '';
+      html += `<label class="manual-item"><input type="checkbox" data-manual-id="${candidate.id}" ${checked}><span class="manual-item-text">${escapeHtml(shortValue(candidate.match.value))}</span></label>`;
+    }
+    html += `</div></div>`;
+  }
+
+  manualList.innerHTML = html;
+
+  // Apply indeterminate state (can't set via HTML attribute)
+  manualList.querySelectorAll<HTMLInputElement>('.pii-group-checkbox[data-indeterminate="true"]').forEach((cb) => {
+    cb.indeterminate = true;
+  });
 
   manualCleanBtn.disabled = !selectedManualMode || selectedCount === 0;
 }
@@ -1279,6 +1508,20 @@ function downloadSanitizedFile(): void {
   if (!sanitizedContent && !sanitizedBlob) {
     setStatus('No sanitized output is available to download yet.', 'warning');
     return;
+  }
+
+  if (requiresManualExportOverride && pendingManualOverrideHighRiskCount > 0) {
+    const proceed = confirm(
+      `High-risk data is still present (${pendingManualOverrideHighRiskCount} item${pendingManualOverrideHighRiskCount === 1 ? '' : 's'}). `
+      + 'Download only if you intentionally accept this risk.'
+    );
+
+    if (!proceed) {
+      setStatus('Download canceled. Manual override confirmation required when high-risk data remains.', 'warning');
+      return;
+    }
+
+    requiresManualExportOverride = false;
   }
 
   if (sanitizedBlob) {

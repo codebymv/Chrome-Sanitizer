@@ -54,6 +54,7 @@ export async function decodeUploadedFile(file: File): Promise<DecodedFile> {
     extractedText: '',
     previewHtml: '<pre>Unsupported format. Please upload TXT, CSV/TSV, DOCX, or PDF.</pre>',
     canSanitizePreservingFormat: false,
+    sanitizationCapability: 'unsupported',
     unsupportedReason: 'Unsupported file format for decoding.'
   };
 }

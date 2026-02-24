@@ -45,6 +45,7 @@ export async function decodeCsvFile(file: File, extension: string): Promise<Deco
     extension,
     extractedText: rawText,
     previewHtml: csvRowsToTable(rows),
-    canSanitizePreservingFormat: true
+    canSanitizePreservingFormat: true,
+    sanitizationCapability: 'preserve-format'
   };
 }

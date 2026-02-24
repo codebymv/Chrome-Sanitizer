@@ -2,7 +2,6 @@ import { detectMatches } from '../shared/pii/detector';
 import { PII_PATTERNS } from '../shared/pii/patterns';
 import type { DetectedMatch } from '../shared/types';
 import { generateSafeReplacement } from '../shared/pii/replacement';
-import { decodeUploadedFile } from '../shared/file/registry';
 import { DECODE_TIMEOUT_MS, DOCX_SANITIZE_TIMEOUT_MS, withTimeout } from '../shared/file/security';
 import { createPdfRedactionEngine } from '../shared/file/redaction/pdf/engine';
 import type { DecodedFile } from '../shared/file/types';
@@ -17,8 +16,7 @@ import {
   validateUploadPreflight
 } from './hardening';
 import Papa from 'papaparse';
-import JSZip from 'jszip';
-import { renderAsync } from 'docx-preview';
+import type JSZip from 'jszip';
 
 type FileKind = 'text' | 'csv' | 'docx' | 'pdf' | 'image' | '';
 type AutoMode = 'hide' | 'replace';
@@ -85,6 +83,9 @@ let pendingPopupCandidateIds: string[] = [];
 let requiresManualExportOverride = false;
 let pendingManualOverrideHighRiskCount = 0;
 const pdfRedactionEngine = createPdfRedactionEngine();
+let decodeUploadedFilePromise: Promise<typeof import('../shared/file/registry')> | null = null;
+let jsZipPromise: Promise<typeof import('jszip')> | null = null;
+let docxPreviewPromise: Promise<typeof import('docx-preview')> | null = null;
 
 uploadZone.addEventListener('click', () => {
   fileInput.click();
@@ -550,7 +551,7 @@ async function processFile(file: File): Promise<void> {
 
 async function displayDecodedFile(file: File): Promise<void> {
   try {
-    const decoded = await withTimeout(decodeUploadedFile(file), DECODE_TIMEOUT_MS, 'File decode');
+    const decoded = await withTimeout(decodeUploadedFileLazy(file), DECODE_TIMEOUT_MS, 'File decode');
     currentDecodedFile = decoded;
 
     if (decoded.kind === 'unsupported') {
@@ -887,7 +888,8 @@ async function sanitizeDocxPreservingFormat(file: File, mode: AutoMode, selected
   strippedMetadataFields: number;
 }> {
   const buffer = await file.arrayBuffer();
-  const zip = await JSZip.loadAsync(buffer);
+  const JSZipModule = await loadJsZip();
+  const zip = await JSZipModule.default.loadAsync(buffer);
   const unsafeEntries = detectUnsafeDocxEntryPaths(Object.keys(zip.files));
   if (unsafeEntries.length > 0) {
     throw new Error(`Unsafe DOCX content detected (${unsafeEntries.slice(0, 3).join(', ')}).`);
@@ -1050,6 +1052,7 @@ async function renderDocxPreview(container: HTMLElement, source: Blob): Promise<
   container.appendChild(host);
 
   const data = await source.arrayBuffer();
+  const { renderAsync } = await loadDocxPreview();
   await renderAsync(data, host, undefined, {
     inWrapper: true,
     renderHeaders: true,
@@ -1611,6 +1614,31 @@ function csvToTable(csvText: string): string {
 
   html += '</table>';
   return html;
+}
+
+async function decodeUploadedFileLazy(file: File): Promise<DecodedFile> {
+  if (!decodeUploadedFilePromise) {
+    decodeUploadedFilePromise = import('../shared/file/registry');
+  }
+
+  const module = await decodeUploadedFilePromise;
+  return module.decodeUploadedFile(file);
+}
+
+async function loadJsZip(): Promise<typeof import('jszip')> {
+  if (!jsZipPromise) {
+    jsZipPromise = import('jszip');
+  }
+
+  return jsZipPromise;
+}
+
+async function loadDocxPreview(): Promise<typeof import('docx-preview')> {
+  if (!docxPreviewPromise) {
+    docxPreviewPromise = import('docx-preview');
+  }
+
+  return docxPreviewPromise;
 }
 
 function showPreview(): void {

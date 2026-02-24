@@ -1,8 +1,4 @@
-import { decodeCsvFile } from './decoders/csv';
-import { decodeDocxFile } from './decoders/docx';
-import { decodePdfFile } from './decoders/pdf';
-import { decodeTextFile } from './decoders/text';
-import type { DecodedFile, Decoder } from './types';
+import type { DecodedFile } from './types';
 import { getExtension } from './utils';
 
 const textExtensions = new Set(['.txt', '.md', '.json', '.xml', '.log', '.html', '.htm']);
@@ -13,37 +9,27 @@ const knownBinaryExtensions = new Set([
   '.docx', '.pdf', '.zip', '.rar', '.7z', '.exe', '.dll', '.bin', '.pptx', '.xlsx'
 ]);
 
-const decoders: Decoder[] = [
-  {
-    canHandle: (_file, extension) => docxExtensions.has(extension),
-    decode: (file, extension) => decodeDocxFile(file, extension)
-  },
-  {
-    canHandle: (file, extension) => file.type === 'application/pdf' || pdfExtensions.has(extension),
-    decode: (file, extension) => decodePdfFile(file, extension)
-  },
-  {
-    canHandle: (file, extension) => file.type === 'text/csv' || csvExtensions.has(extension),
-    decode: (file, extension) => decodeCsvFile(file, extension)
-  },
-  {
-    canHandle: (file, extension) => {
-      if (knownBinaryExtensions.has(extension)) {
-        return false;
-      }
-      return file.type.startsWith('text/') || textExtensions.has(extension);
-    },
-    decode: (file, extension) => decodeTextFile(file, extension)
-  }
-];
-
 export async function decodeUploadedFile(file: File): Promise<DecodedFile> {
   const extension = getExtension(file.name);
 
-  for (const decoder of decoders) {
-    if (decoder.canHandle(file, extension)) {
-      return decoder.decode(file, extension);
-    }
+  if (docxExtensions.has(extension)) {
+    const { decodeDocxFile } = await import('./decoders/docx');
+    return decodeDocxFile(file, extension);
+  }
+
+  if (file.type === 'application/pdf' || pdfExtensions.has(extension)) {
+    const { decodePdfFile } = await import('./decoders/pdf');
+    return decodePdfFile(file, extension);
+  }
+
+  if (file.type === 'text/csv' || csvExtensions.has(extension)) {
+    const { decodeCsvFile } = await import('./decoders/csv');
+    return decodeCsvFile(file, extension);
+  }
+
+  if (!knownBinaryExtensions.has(extension) && (file.type.startsWith('text/') || textExtensions.has(extension))) {
+    const { decodeTextFile } = await import('./decoders/text');
+    return decodeTextFile(file, extension);
   }
 
   return {

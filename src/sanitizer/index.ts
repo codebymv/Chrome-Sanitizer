@@ -20,7 +20,6 @@ import type JSZip from 'jszip';
 
 type FileKind = 'text' | 'csv' | 'docx' | 'pdf' | 'image' | '';
 type AutoMode = 'hide' | 'replace';
-type ManualMode = 'select' | 'highlight' | '';
 type StatusTone = 'success' | 'warning' | 'error';
 
 interface ManualCandidate {
@@ -52,7 +51,6 @@ const preModeHelp = mustGet<HTMLElement>('preModeHelp');
 const controlsToggleBtn = mustGet<HTMLButtonElement>('controlsToggleBtn');
 const controlsToggleMeta = mustGet<HTMLElement>('controlsToggleMeta');
 const controlsPanel = mustGet<HTMLElement>('controlsPanel');
-const manualHelperText = mustGet<HTMLElement>('manualHelperText');
 const manualSummary = mustGet<HTMLElement>('manualSummary');
 const manualList = mustGet<HTMLElement>('manualList');
 const manualSelectionPopup = mustGet<HTMLElement>('manualSelectionPopup');
@@ -62,7 +60,6 @@ const selectAllBtn = mustGet<HTMLButtonElement>('selectAllBtn');
 const deselectAllBtn = mustGet<HTMLButtonElement>('deselectAllBtn');
 
 const autoModeRadios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="autoMode"]'));
-const manualModeRadios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="manualMode"]'));
 
 let currentFile: File | null = null;
 let currentFileContent: string | null = null;
@@ -76,7 +73,6 @@ let selectedAutoMode: AutoMode = 'hide';
 let autoRunOnUpload = true;
 let syncingScroll = false;
 let controlsPanelExpanded = true;
-let selectedManualMode: ManualMode = '';
 let manualSelection = new Map<string, ManualCandidate>();
 let manualCandidates: ManualCandidate[] = [];
 let pendingPopupCandidateIds: string[] = [];
@@ -119,13 +115,9 @@ fileInput.addEventListener('change', (event) => {
 
 resetSelectionsBtn.addEventListener('click', () => {
   applySelectedMode(selectedAutoMode, true);
-  if (selectedManualMode) {
-    manualSelection = selectedManualMode === 'highlight'
-      ? new Map(manualCandidates.map((candidate) => [candidate.id, candidate]))
-      : new Map<string, ManualCandidate>();
-    updateManualReviewUi();
-    renderManualPreview();
-  }
+  manualSelection = new Map(manualCandidates.map((candidate) => [candidate.id, candidate]));
+  updateManualReviewUi();
+  renderManualPreview();
   clearStatus();
 });
 
@@ -174,17 +166,6 @@ preAutoRunToggle.addEventListener('change', (event) => {
   setAutoRunPreference(preAutoRunToggle.checked, true);
 });
 
-manualModeRadios.forEach((radio) => {
-  radio.addEventListener('change', (event) => {
-    const target = event.target as HTMLInputElement;
-    if (!target.checked) {
-      return;
-    }
-
-    applyManualMode(target.value as ManualMode);
-  });
-});
-
 manualList.addEventListener('change', (event) => {
   const target = event.target as HTMLInputElement;
   if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') {
@@ -200,10 +181,6 @@ manualList.addEventListener('change', (event) => {
 });
 
 originalPreview.addEventListener('click', (event) => {
-  if (!selectedManualMode) {
-    return;
-  }
-
   const target = event.target as HTMLElement;
   const hit = target.closest<HTMLElement>('.manual-hit');
   const id = hit?.dataset.manualId;
@@ -216,11 +193,6 @@ originalPreview.addEventListener('click', (event) => {
 });
 
 originalPreview.addEventListener('mouseup', () => {
-  if (selectedManualMode !== 'select') {
-    hideManualSelectionPopup();
-    return;
-  }
-
   if (fileType === 'csv') {
     hideManualSelectionPopup();
     return;
@@ -313,11 +285,6 @@ autoCleanBtn.addEventListener('click', () => {
 });
 
 manualCleanBtn.addEventListener('click', () => {
-  if (!selectedManualMode) {
-    setStatus('Choose Select or Highlight mode before applying manual sanitization.', 'warning');
-    return;
-  }
-
   void performManualClean();
 });
 
@@ -405,7 +372,6 @@ function applySelectedMode(mode: AutoMode, persist: boolean): void {
   });
   updatePreModeUi(mode);
   autoCleanBtn.disabled = !currentFileContent;
-  updateManualHelperText();
 
   if (persist) {
     void chrome.storage.local.set({ [MODE_STORAGE_KEY]: mode });
@@ -455,7 +421,6 @@ function clearEverything(): void {
   fileType = '';
   currentDecodedFile = null;
   sanitizedBlob = null;
-  selectedManualMode = '';
   manualSelection = new Map<string, ManualCandidate>();
   manualCandidates = [];
   pendingPopupCandidateIds = [];
@@ -467,17 +432,12 @@ function clearEverything(): void {
   autoModeRadios.forEach((radio) => {
     radio.disabled = false;
   });
-  manualModeRadios.forEach((radio) => {
-    radio.checked = false;
-    radio.disabled = false;
-  });
 
   autoCleanBtn.disabled = true;
   manualCleanBtn.disabled = true;
   downloadBtn.disabled = true;
   applySelectedMode(selectedAutoMode, false);
   updateManualReviewUi();
-  updateManualHelperText();
 
   originalPreview.innerHTML = '';
   sanitizedPreview.innerHTML = '';
@@ -494,12 +454,7 @@ function resetControlStateForNewFile(): void {
   autoModeRadios.forEach((radio) => {
     radio.disabled = false;
   });
-  manualModeRadios.forEach((radio) => {
-    radio.checked = false;
-    radio.disabled = false;
-  });
 
-  selectedManualMode = '';
   manualSelection = new Map<string, ManualCandidate>();
   manualCandidates = [];
   pendingPopupCandidateIds = [];
@@ -511,7 +466,6 @@ function resetControlStateForNewFile(): void {
   downloadBtn.disabled = true;
   applySelectedMode(selectedAutoMode, false);
   updateManualReviewUi();
-  updateManualHelperText();
   sanitizedContent = null;
   sanitizedBlob = null;
 }
@@ -566,18 +520,12 @@ async function displayDecodedFile(file: File): Promise<void> {
         radio.checked = false;
         radio.disabled = true;
       });
-      manualModeRadios.forEach((radio) => {
-        radio.checked = false;
-        radio.disabled = true;
-      });
       autoCleanBtn.disabled = true;
       manualCleanBtn.disabled = true;
       downloadBtn.disabled = true;
-      selectedManualMode = '';
       manualSelection = new Map<string, ManualCandidate>();
       manualCandidates = [];
       updateManualReviewUi();
-      updateManualHelperText('Manual review is unavailable for this file type.');
       setStatus(decoded.unsupportedReason ?? 'Unsupported file format.', 'warning');
       showPreview();
       return;
@@ -586,24 +534,17 @@ async function displayDecodedFile(file: File): Promise<void> {
     currentFileContent = decoded.extractedText;
     detectedPII = detectMatches(decoded.extractedText, PII_PATTERNS);
     manualCandidates = buildManualCandidates(detectedPII);
-    manualSelection = new Map<string, ManualCandidate>();
+    manualSelection = new Map(manualCandidates.map((candidate) => [candidate.id, candidate]));
     fileType = decoded.kind;
 
     if (decoded.kind === 'docx') {
       await renderDocxPreview(originalPreview, file);
-      manualModeRadios.forEach((radio) => {
-        radio.disabled = false;
-      });
       updateManualReviewUi();
-      updateManualHelperText('Manual mode for DOCX switches to a selectable text preview with inline highlights.');
     } else {
       originalPreview.classList.remove('docx-layout');
       originalPreview.innerHTML = decoded.previewHtml;
-      manualModeRadios.forEach((radio) => {
-        radio.disabled = false;
-      });
       updateManualReviewUi();
-      updateManualHelperText();
+      renderManualPreview();
     }
 
     if (decoded.sanitizationCapability !== 'preserve-format') {
@@ -616,18 +557,12 @@ async function displayDecodedFile(file: File): Promise<void> {
         radio.checked = false;
         radio.disabled = true;
       });
-      manualModeRadios.forEach((radio) => {
-        radio.checked = false;
-        radio.disabled = true;
-      });
       autoCleanBtn.disabled = true;
       manualCleanBtn.disabled = true;
       downloadBtn.disabled = true;
-      selectedManualMode = '';
       manualSelection = new Map<string, ManualCandidate>();
       manualCandidates = [];
       updateManualReviewUi();
-      updateManualHelperText(decoded.kind === 'pdf' ? 'PDF is in detect-only mode until object-level redaction is available.' : 'Manual review is unavailable for this file type.');
       setStatus(detectOnlyMessage, 'warning');
       showPreview();
       return;
@@ -663,10 +598,6 @@ async function displayImage(file: File): Promise<void> {
   sanitizedPreview.innerHTML = '<pre style="color: #f59e0b; text-align: center; padding: 40px;">Image sanitization is not supported yet.\nUpload text or CSV for cleaning.</pre>';
 
   autoModeRadios.forEach((radio) => {
-    radio.disabled = true;
-    radio.checked = false;
-  });
-  manualModeRadios.forEach((radio) => {
     radio.disabled = true;
     radio.checked = false;
   });
@@ -816,7 +747,7 @@ function sanitizeBySelectedMatches(inputText: string, mode: AutoMode, matches: D
 }
 
 function maybeOpenManualSelectionPopup(): void {
-  if (!selectedManualMode || selectedManualMode !== 'select' || manualCandidates.length === 0) {
+  if (manualCandidates.length === 0) {
     hideManualSelectionPopup();
     return;
   }
@@ -1325,7 +1256,13 @@ function shortValue(value: string): string {
 }
 
 function renderManualPreview(): void {
-  if (!currentFileContent || !selectedManualMode) {
+  if (!currentFileContent || manualCandidates.length === 0) {
+    return;
+  }
+
+  // DOCX files use the rich docx-preview render — never overwrite it with plain text.
+  // The PII checklist panel and text-selection popup handle selection for DOCX.
+  if (fileType === 'docx') {
     return;
   }
 
@@ -1349,34 +1286,6 @@ function renderManualPreview(): void {
   html += escapeHtml(currentFileContent.slice(cursor));
   originalPreview.classList.remove('docx-layout');
   originalPreview.innerHTML = `<pre>${html}</pre>`;
-}
-
-function applyManualMode(mode: ManualMode): void {
-  if (!currentFileContent) {
-    setStatus('Upload a supported file to use manual mode.', 'warning');
-    manualModeRadios.forEach((radio) => {
-      radio.checked = false;
-    });
-    selectedManualMode = '';
-    manualCleanBtn.disabled = true;
-    updateManualReviewUi();
-    updateManualHelperText();
-    return;
-  }
-
-  selectedManualMode = mode;
-  if (mode === 'highlight') {
-    manualSelection = new Map(manualCandidates.map((candidate) => [candidate.id, candidate]));
-  }
-  if (mode === 'select') {
-    manualSelection = new Map<string, ManualCandidate>();
-  }
-
-  updateManualReviewUi();
-  renderManualPreview();
-  hideManualSelectionPopup();
-  updateManualHelperText();
-  setStatus(`Manual ${mode} mode is active. Toggle highlighted values, then click Apply Selection.`, 'success');
 }
 
 function toggleManualSelection(id: string, selected: boolean): void {
@@ -1455,31 +1364,8 @@ function updateManualReviewUi(): void {
     cb.indeterminate = true;
   });
 
-  manualCleanBtn.disabled = !selectedManualMode || selectedCount === 0;
+  manualCleanBtn.disabled = selectedCount === 0;
   updateControlsToggleMeta();
-}
-
-function updateManualHelperText(message?: string): void {
-  if (message) {
-    manualHelperText.textContent = message;
-    return;
-  }
-
-  if (fileType === 'docx') {
-    manualHelperText.textContent = selectedManualMode === 'select'
-      ? 'Select text in preview to open Hide/Replace popup, then click Apply Selection.'
-      : 'Highlight mode marks detected instances in preview. Deselect any you want to keep, then apply.';
-    return;
-  }
-
-  if (!selectedManualMode) {
-    manualHelperText.textContent = `Manual mode uses the current Auto action (${selectedAutoMode}). Choose Select or Highlight to begin.`;
-    return;
-  }
-
-  manualHelperText.textContent = selectedManualMode === 'select'
-    ? 'Select text in preview to open Hide/Replace popup, then click Apply Selection.'
-    : `Manual highlight mode active. Applying selections will use ${selectedAutoMode}.`;
 }
 
 function generateFakeData(original: string, type: string): string {

@@ -1,8 +1,10 @@
 import {
   getHistoryStats,
   getLatestDetection,
+  getOverlayEnabled,
   getSessionStats,
   getShieldEnabled,
+  setOverlayEnabled,
   setSessionStats,
   setShieldEnabled
 } from '../shared/storage';
@@ -121,6 +123,7 @@ function showMonitoredInfo(): void {
 
 document.addEventListener('DOMContentLoaded', async () => {
   const enableToggle = mustGet<HTMLInputElement>('enableToggle');
+  const overlayToggle = mustGet<HTMLInputElement>('overlayToggle');
   const status = mustGet<HTMLElement>('status');
   const redactedCount = mustGet<HTMLElement>('redactedCount');
   const protectedTypes = mustGet<HTMLElement>('protectedTypes');
@@ -129,8 +132,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const historyCount = mustGet<HTMLElement>('historyCount');
   const historyTypes = mustGet<HTMLElement>('historyTypes');
 
-  const enabled = await getShieldEnabled();
+  const [enabled, overlayEnabled] = await Promise.all([getShieldEnabled(), getOverlayEnabled()]);
   enableToggle.checked = enabled;
+  overlayToggle.checked = overlayEnabled;
   updateStatus(status, enabled);
 
   const [sessionStats, historyStats, latestDetection] = await Promise.all([
@@ -163,6 +167,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const nextEnabled = enableToggle.checked;
     await setShieldEnabled(nextEnabled);
     updateStatus(status, nextEnabled);
+  });
+
+  overlayToggle.addEventListener('change', async () => {
+    await setOverlayEnabled(overlayToggle.checked);
   });
 
   openSanitizerBtn.addEventListener('click', () => {

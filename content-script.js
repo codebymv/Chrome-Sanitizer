@@ -271,15 +271,24 @@
     }
     init() {
       this.createPersistentShield();
-      chrome.storage.sync.get(["shieldEnabled"], (result) => {
+      chrome.storage.sync.get(["shieldEnabled", "overlayEnabled"], (result) => {
         this.enabled = result.shieldEnabled !== false;
+        this.applyOverlayVisibility(result.overlayEnabled !== false);
       });
       chrome.storage.onChanged.addListener((changes) => {
         if (changes.shieldEnabled) {
           this.enabled = changes.shieldEnabled.newValue !== false;
         }
+        if (changes.overlayEnabled) {
+          this.applyOverlayVisibility(changes.overlayEnabled.newValue !== false);
+        }
       });
       this.attachListeners();
+    }
+    applyOverlayVisibility(visible) {
+      const display = visible ? "" : "none";
+      if (this.shieldElement) this.shieldElement.style.display = display;
+      if (this.wrenchElement) this.wrenchElement.style.display = display;
     }
     createPersistentShield() {
       const createShield = () => {

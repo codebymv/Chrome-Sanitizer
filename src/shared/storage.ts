@@ -56,6 +56,15 @@ export async function setShieldEnabled(enabled: boolean): Promise<void> {
   await chrome.storage.sync.set({ shieldEnabled: enabled });
 }
 
+export async function getOverlayEnabled(): Promise<boolean> {
+  const result = await chrome.storage.sync.get(['overlayEnabled']);
+  return result.overlayEnabled !== false;
+}
+
+export async function setOverlayEnabled(enabled: boolean): Promise<void> {
+  await chrome.storage.sync.set({ overlayEnabled: enabled });
+}
+
 export async function getSessionStats(): Promise<SessionStats> {
   const result = await chrome.storage.local.get(['sessionStats']);
   return asSessionStats(result.sessionStats);

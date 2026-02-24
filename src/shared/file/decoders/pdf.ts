@@ -20,25 +20,41 @@ interface PdfTextItem {
   transform?: number[];
 }
 
+interface OcrWordBbox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 interface OcrWord {
   text?: string;
   confidence?: number;
-  bbox?: {
-    x0: number;
-    y0: number;
-    x1: number;
-    y1: number;
-  };
+  bbox?: OcrWordBbox;
+}
+
+interface OcrLine {
+  words?: OcrWord[];
+}
+
+interface OcrParagraph {
+  lines?: OcrLine[];
+}
+
+interface OcrBlock {
+  paragraphs?: OcrParagraph[];
 }
 
 interface OcrRecognizeResult {
   data?: {
-    words?: OcrWord[];
+    text?: string;
+    confidence?: number;
+    blocks?: OcrBlock[] | null;
   };
 }
 
 interface OcrRuntime {
-  recognize: (image: string, language: string) => Promise<OcrRecognizeResult>;
+  recognize: (image: string) => Promise<OcrRecognizeResult>;
   dispose: () => Promise<void>;
 }
 
@@ -52,7 +68,11 @@ interface TesseractCreateWorkerOptions {
 }
 
 interface TesseractWorkerInstance {
-  recognize: (image: string) => Promise<OcrRecognizeResult>;
+  recognize: (
+    image: string,
+    opts?: Record<string, unknown>,
+    output?: Record<string, boolean>
+  ) => Promise<OcrRecognizeResult>;
   terminate?: () => Promise<void>;
 }
 
@@ -146,7 +166,11 @@ async function createOcrRuntime(): Promise<OcrRuntime> {
 
   return {
     recognize: async (image) =>
-      withTimeout(worker.recognize(image), OCR_RECOGNIZE_TIMEOUT_MS, 'OCR page recognition'),
+      withTimeout(
+        worker.recognize(image, {}, { text: true, blocks: true }),
+        OCR_RECOGNIZE_TIMEOUT_MS,
+        'OCR page recognition'
+      ),
     dispose: async () => {
       if (typeof worker.terminate === 'function') {
         await worker.terminate();
@@ -298,11 +322,26 @@ async function extractWithOcr(doc: pdfjs.PDFDocumentProxy): Promise<{ pageTexts:
 
       await page.render({ canvasContext: context, viewport }).promise;
       const image = canvas.toDataURL('image/png');
-      const result = await ocr.recognize(image, 'eng');
-      const words = result.data?.words ?? [];
+      const result = await ocr.recognize(image);
+
+      // Tesseract.js v7: words live inside blocks → paragraphs → lines → words
+      const words: OcrWord[] = [];
+      const blocks = result.data?.blocks;
+      if (Array.isArray(blocks)) {
+        for (const block of blocks) {
+          for (const para of (block.paragraphs ?? [])) {
+            for (const line of (para.lines ?? [])) {
+              for (const word of (line.words ?? [])) {
+                words.push(word);
+              }
+            }
+          }
+        }
+      }
+
       const pageTokens: string[] = [];
-      const acceptedWords: Array<{ tokenText: string; bbox: OcrWord['bbox']; }> = [];
-      const relaxedCandidates: Array<{ tokenText: string; bbox: OcrWord['bbox']; }> = [];
+      const acceptedWords: Array<{ tokenText: string; bbox: OcrWordBbox | undefined; }> = [];
+      const relaxedCandidates: Array<{ tokenText: string; bbox: OcrWordBbox | undefined; }> = [];
 
       if (pageTexts.length > 0) {
         cursor += 2;

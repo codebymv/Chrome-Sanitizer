@@ -279,13 +279,19 @@
       key: "driversLicense",
       label: "Driver's License",
       severity: "high",
-      regex: /(?<=\b(?:driver'?s?\s*license|dl)\s*:\s*)[A-Z]{1,2}\d{5,8}\b/gi
+      regex: /(?<=\b(?:driver'?s?\s*licen[sc]e|dl)(?:\s*(?:#|number|no\.?))?\s*:\s*)[A-Z]{1,2}\d{5,8}\b/gi
     },
     {
       key: "dob",
       label: "Date of Birth",
       severity: "high",
       regex: /\b(0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12][0-9]|3[01])[\/\-](19|20)\d{2}\b/g
+    },
+    {
+      key: "dobContextual",
+      label: "Date of Birth",
+      severity: "high",
+      regex: /(?<=\b(?:date\s*of\s*birth|d\.?o\.?b\.?)\s*:\s*)(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?,?\s+\d{4})/gi
     },
     {
       key: "mrn",

@@ -12,7 +12,9 @@
     "test:content-utils": "tsx scripts/test-content-runtime-utils.ts",
     "test:sanitizer-hardening": "tsx scripts/test-sanitizer-hardening.ts",
     "test:pdf-redaction-scaffold": "tsx scripts/test-pdf-redaction-scaffold.ts",
-    "test:ocr-offline": "tsx scripts/test-ocr-offline-assets.ts"
+    "test:ocr-offline": "tsx scripts/test-ocr-offline-assets.ts",
+    "test:sample-pdf-ocr": "tsx scripts/test-sample-pdf-ocr-audit.ts",
+    "test:tesseract-v7": "tsx scripts/test-tesseract-v7-api.ts"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

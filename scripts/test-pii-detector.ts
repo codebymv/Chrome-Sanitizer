@@ -43,6 +43,16 @@ const cases: Case[] = [
     blockedKeys: ['ipAddress']
   },
   {
+    name: 'detects driver license with hash and number variants',
+    text: "Driver License#: D08194663 and DL Number: AB1234567",
+    expectedKeys: ['driversLicense']
+  },
+  {
+    name: 'detects contextual date of birth in text format',
+    text: 'Date of Birth: Jul 27 1996',
+    expectedKeys: ['dobContextual']
+  },
+  {
     name: 'does not match short random digits as credit card',
     text: 'random numbers 123456789012 and 1234567890 should not be credit cards',
     expectedKeys: [],

@@ -8,29 +8,35 @@ interface PdfTextItem {
   str?: string;
 }
 
-let workerConfigured = false;
+let workerBootstrapPromise: Promise<void> | null = null;
 
-function ensurePdfWorkerConfigured(): void {
-  if (workerConfigured) {
-    return;
+async function ensurePdfWorkerConfigured(): Promise<void> {
+  if (workerBootstrapPromise) {
+    return workerBootstrapPromise;
   }
 
-  try {
-    if (!pdfjs.GlobalWorkerOptions.workerPort) {
-      pdfjs.GlobalWorkerOptions.workerPort = new Worker(
-        new URL('pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url),
-        { type: 'module' }
-      );
+  workerBootstrapPromise = (async () => {
+    try {
+      const workerModule = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+      const scope = globalThis as typeof globalThis & { pdfjsWorker?: unknown };
+
+      if (!scope.pdfjsWorker) {
+        scope.pdfjsWorker = workerModule;
+      }
+
+      if (pdfjs.GlobalWorkerOptions.workerPort) {
+        pdfjs.GlobalWorkerOptions.workerPort = null;
+      }
+    } catch (error) {
+      console.warn('PDF.js worker bootstrap failed. Falling back to default worker resolution.', error);
     }
-  } catch (error) {
-    console.warn('PDF.js worker setup failed. Falling back to default worker resolution.', error);
-  }
+  })();
 
-  workerConfigured = true;
+  return workerBootstrapPromise;
 }
 
 export async function decodePdfFile(file: File, extension: string): Promise<DecodedFile> {
-  ensurePdfWorkerConfigured();
+  await ensurePdfWorkerConfigured();
   const buffer = await file.arrayBuffer();
   const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer) });
 

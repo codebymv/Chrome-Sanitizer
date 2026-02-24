@@ -1,12 +1,28 @@
 import type { DetectionPattern } from '../types';
 import { isLikelyCreditCard, isLikelyExpiry, isLikelyIpv4 } from './validators';
 
+function isLikelyPersonalName(value: string): boolean {
+  const tokens = value.trim().split(/\s+/).map((token) => token.replace(/[^A-Za-z]/g, '').toLowerCase()).filter(Boolean);
+  if (tokens.length < 2 || tokens.length > 4) {
+    return false;
+  }
+
+  const stopwords = new Set([
+    'name', 'full', 'street', 'address', 'city', 'state', 'zip', 'phone', 'email', 'ssn',
+    'date', 'birth', 'credit', 'card', 'expiry', 'cvv', 'bank', 'account', 'financial',
+    'information', 'records', 'medical', 'sample', 'provider', 'insurance', 'group'
+  ]);
+
+  return !tokens.some((token) => stopwords.has(token));
+}
+
 export const PII_PATTERNS: DetectionPattern[] = [
   {
     key: 'fullNameContextual',
     label: 'Full Name',
     severity: 'high',
-    regex: /(?<=\b(?:full\s*name|name)\b(?:\s*:\s*|\s+))[A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z]+){1,3}\b/gi
+    regex: /(?<=\b(?:full\s*name|name)\b(?:\s*:\s*|\s+))[A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z]+){1,3}\b/gi,
+    validate: (match) => isLikelyPersonalName(match)
   },
   {
     key: 'ssn',
@@ -117,19 +133,19 @@ export const PII_PATTERNS: DetectionPattern[] = [
     key: 'npi',
     label: 'Provider Identifier',
     severity: 'high',
-    regex: /\bnpi\b(?:\s*:\s*|\s+)\d{10}\b/gi
+    regex: /(?<=\bnpi\b(?:\s*:\s*|\s+))\d{10}\b/gi
   },
   {
     key: 'insuranceId',
     label: 'Insurance ID',
     severity: 'high',
-    regex: /\b(?:insurance\s*id|member\s*id|policy\s*id)\b(?:\s*:\s*|\s+)[A-Z0-9\-]{6,20}\b/gi
+    regex: /(?<=\b(?:insurance\s*id|member\s*id|policy\s*id)\b(?:\s*:\s*|\s+))[A-Z0-9\-]{6,20}\b/gi
   },
   {
     key: 'groupNumber',
     label: 'Insurance Group',
     severity: 'medium',
-    regex: /\bgroup\b(?:\s*:\s*|\s+)[A-Z0-9\-]{3,12}\b/gi
+    regex: /(?<=\bgroup\b(?:\s*:\s*|\s+))[A-Z0-9\-]{3,12}\b/gi
   },
   {
     key: 'ipAddress',

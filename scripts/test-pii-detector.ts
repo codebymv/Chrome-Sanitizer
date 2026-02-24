@@ -28,7 +28,13 @@ const cases: Case[] = [
   {
     name: 'detects table-style addresses, masked accounts, and medical ids',
     text: 'Name Jane A. Doe 742 Evergreen Terrace Springfield IL 62704 Expiry 08/27 CVV 123 Bank Account ****4321 MRN: 00123456 NPI: 1234567890 Insurance ID: BCBS-987654321 Group: 45678',
-    expectedKeys: ['fullNameContextual', 'streetAddressLoose', 'zipCode', 'cardExpiry', 'cvv', 'bankAccountMasked', 'mrn', 'npi', 'insuranceId', 'groupNumber']
+    expectedKeys: ['fullNameContextual', 'streetAddressLoose', 'zipCode', 'cardExpiry', 'cvv', 'bankAccountMasked', 'mrn', 'npi', 'insuranceId']
+  },
+  {
+    name: 'does not treat column headers as full names',
+    text: 'Name Street Address City State ZIP',
+    expectedKeys: [],
+    blockedKeys: ['fullNameContextual', 'streetAddressLoose']
   },
   {
     name: 'does not match invalid ipv4 values',

@@ -53,6 +53,13 @@
   async function setShieldEnabled(enabled) {
     await chrome.storage.sync.set({ shieldEnabled: enabled });
   }
+  async function getOverlayEnabled() {
+    const result = await chrome.storage.sync.get(["overlayEnabled"]);
+    return result.overlayEnabled !== false;
+  }
+  async function setOverlayEnabled(enabled) {
+    await chrome.storage.sync.set({ overlayEnabled: enabled });
+  }
   async function getSessionStats() {
     const result = await chrome.storage.local.get(["sessionStats"]);
     return asSessionStats(result.sessionStats);
@@ -163,6 +170,7 @@
   }
   document.addEventListener("DOMContentLoaded", async () => {
     const enableToggle = mustGet("enableToggle");
+    const overlayToggle = mustGet("overlayToggle");
     const status = mustGet("status");
     const redactedCount = mustGet("redactedCount");
     const protectedTypes = mustGet("protectedTypes");
@@ -170,8 +178,9 @@
     const latestDetectionDiv = mustGet("latestDetection");
     const historyCount = mustGet("historyCount");
     const historyTypes = mustGet("historyTypes");
-    const enabled = await getShieldEnabled();
+    const [enabled, overlayEnabled] = await Promise.all([getShieldEnabled(), getOverlayEnabled()]);
     enableToggle.checked = enabled;
+    overlayToggle.checked = overlayEnabled;
     updateStatus(status, enabled);
     const [sessionStats, historyStats, latestDetection] = await Promise.all([
       getSessionStats(),
@@ -197,6 +206,9 @@
       const nextEnabled = enableToggle.checked;
       await setShieldEnabled(nextEnabled);
       updateStatus(status, nextEnabled);
+    });
+    overlayToggle.addEventListener("change", async () => {
+      await setOverlayEnabled(overlayToggle.checked);
     });
     openSanitizerBtn.addEventListener("click", () => {
       const sanitizerUrl = chrome.runtime.getURL("sanitizer.html");

@@ -1,4 +1,5 @@
 export type DecodedFileKind = 'text' | 'csv' | 'docx' | 'pdf' | 'unsupported';
+export type SanitizationCapability = 'preserve-format' | 'detect-only' | 'unsupported';
 
 export interface DecodedFile {
   kind: DecodedFileKind;
@@ -8,6 +9,7 @@ export interface DecodedFile {
   extractedText: string;
   previewHtml: string;
   canSanitizePreservingFormat: boolean;
+  sanitizationCapability: SanitizationCapability;
   unsupportedReason?: string;
 }
 

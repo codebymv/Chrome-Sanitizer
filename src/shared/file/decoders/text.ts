@@ -10,6 +10,7 @@ export async function decodeTextFile(file: File, extension: string): Promise<Dec
     extension,
     extractedText: text,
     previewHtml: `<pre>${escapeHtml(text)}</pre>`,
-    canSanitizePreservingFormat: true
+    canSanitizePreservingFormat: true,
+    sanitizationCapability: 'preserve-format'
   };
 }

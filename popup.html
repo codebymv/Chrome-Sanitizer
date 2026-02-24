@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="sani_icon.png">
   <style>
     :root {
       --color-surface: #FAFAF8;
@@ -120,10 +120,28 @@
     .toggle-section {
       background: var(--color-surface-raised);
       border-radius: var(--radius-md);
-      padding: 12px 16px;
+      padding: 16px;
       margin-bottom: 12px;
       border: 1px solid var(--color-border);
       box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toggle-section h3 {
+      margin: 0 0 2px 0;
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .toggle-section h3 svg {
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 5px;
+      color: var(--color-text-tertiary);
     }
     .toggle-row {
       display: flex;
@@ -133,11 +151,12 @@
     .toggle-label {
       font-size: 13px;
       font-weight: 500;
+      color: var(--color-text-secondary);
     }
     .switch {
       position: relative;
       display: inline-block;
-      width: 42px; height: 24px;
+      width: 36px; height: 20px;
     }
     .switch input { opacity: 0; width: 0; height: 0; }
     .slider {
@@ -146,12 +165,12 @@
       inset: 0;
       background-color: var(--color-border);
       transition: var(--transition-fast);
-      border-radius: 24px;
+      border-radius: 20px;
     }
     .slider:before {
       position: absolute;
       content: "";
-      height: 18px; width: 18px;
+      height: 14px; width: 14px;
       left: 3px; bottom: 3px;
       background-color: white;
       transition: var(--transition-fast);
@@ -159,7 +178,7 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.12);
     }
     input:checked + .slider { background-color: var(--color-accent); }
-    input:checked + .slider:before { transform: translateX(18px); }
+    input:checked + .slider:before { transform: translateX(16px); }
     input:focus-visible + .slider {
       outline: 2px solid var(--color-accent);
       outline-offset: 2px;
@@ -173,11 +192,6 @@
       margin-bottom: 12px;
       border: 1px solid var(--color-border);
       box-shadow: var(--shadow-sm);
-    }
-    .stats.history-stats {
-      background: var(--color-surface-sunken);
-      border-color: var(--color-border-subtle);
-      box-shadow: none;
     }
     .stats h3 {
       margin: 0 0 12px 0;
@@ -330,7 +344,7 @@
       border: 1px solid var(--color-border);
       border-radius: var(--radius-sm);
       background: var(--color-surface);
-      color: var(--color-text-primary);
+      color: var(--color-text-secondary);
       cursor: pointer;
       font-family: var(--font-body);
       font-size: 13px;
@@ -495,10 +509,23 @@
     </div>
 
     <div class="toggle-section">
+      <h3>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 2L4 6v6c0 5 3.6 9.6 8 11 4.4-1.4 8-6 8-11V6l-8-4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+        Controls
+      </h3>
       <div class="toggle-row">
         <span class="toggle-label">Enable Protection</span>
         <label class="switch">
           <input type="checkbox" id="enableToggle" checked aria-label="Toggle PII protection">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Enable Overlay</span>
+        <label class="switch">
+          <input type="checkbox" id="overlayToggle" checked aria-label="Toggle page overlay">
           <span class="slider"></span>
         </label>
       </div>

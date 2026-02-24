@@ -1,12 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Sani",
-  "version": "1.0",
+  "version": "1.0.0",
   "description": "Sani — Detect and sanitize PII in AI chat inputs and file uploads",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "tabs"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "host_permissions": [
     "<all_urls>"
   ],
@@ -15,7 +19,7 @@
       "matches": [
         "<all_urls>"
       ],
-      "js": ["content.js"],
+      "js": ["content-script.js"],
       "css": ["styles.css"],
       "run_at": "document_end"
     }
@@ -35,7 +39,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["sanitizer.html", "sanitizer.js", "sani_icon.png", "sani_text.png", "icon_soap_white.png", "icon_shield_white.png"],
+      "resources": ["sani_icon.png", "sani_text.png", "icon_soap_white.png", "icon_shield_white.png"],
       "matches": ["<all_urls>"]
     }
   ]

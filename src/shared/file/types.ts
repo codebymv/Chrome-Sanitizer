@@ -1,6 +1,8 @@
 export type DecodedFileKind = 'text' | 'csv' | 'docx' | 'pdf' | 'unsupported';
 export type SanitizationCapability = 'preserve-format' | 'detect-only' | 'unsupported';
 
+import type { PdfExtractionContext } from './redaction/pdf/types';
+
 export interface DecodedFile {
   kind: DecodedFileKind;
   fileName: string;
@@ -11,6 +13,7 @@ export interface DecodedFile {
   canSanitizePreservingFormat: boolean;
   sanitizationCapability: SanitizationCapability;
   unsupportedReason?: string;
+  pdfExtraction?: PdfExtractionContext;
 }
 
 export interface Decoder {

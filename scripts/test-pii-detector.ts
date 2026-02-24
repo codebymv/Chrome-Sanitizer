@@ -26,10 +26,31 @@ const cases: Case[] = [
     expectedKeys: ['apiKey', 'authToken']
   },
   {
+    name: 'detects table-style addresses, masked accounts, and medical ids',
+    text: 'Name Jane A. Doe 742 Evergreen Terrace Springfield IL 62704 Expiry 08/27 CVV 123 Bank Account ****4321 MRN: 00123456 NPI: 1234567890 Insurance ID: BCBS-987654321 Group: 45678',
+    expectedKeys: ['fullNameContextual', 'streetAddressLoose', 'zipCode', 'cardExpiry', 'cvv', 'bankAccountMasked', 'mrn', 'npi', 'insuranceId']
+  },
+  {
+    name: 'does not treat column headers as full names',
+    text: 'Name Street Address City State ZIP',
+    expectedKeys: [],
+    blockedKeys: ['fullNameContextual', 'streetAddressLoose']
+  },
+  {
     name: 'does not match invalid ipv4 values',
     text: 'invalid ip 999.999.999.999 should not match',
     expectedKeys: [],
     blockedKeys: ['ipAddress']
+  },
+  {
+    name: 'detects driver license with hash and number variants',
+    text: "Driver License#: D08194663 and DL Number: AB1234567",
+    expectedKeys: ['driversLicense']
+  },
+  {
+    name: 'detects contextual date of birth in text format',
+    text: 'Date of Birth: Jul 27 1996',
+    expectedKeys: ['dobContextual']
   },
   {
     name: 'does not match short random digits as credit card',

@@ -1,5 +1,5 @@
 {
-  "name": "ai-privacy-shield-extension",
+  "name": "sani-extension",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -11,14 +11,20 @@
     "test:detector": "tsx scripts/test-pii-detector.ts",
     "test:content-utils": "tsx scripts/test-content-runtime-utils.ts",
     "test:sanitizer-hardening": "tsx scripts/test-sanitizer-hardening.ts",
-    "test:pdf-redaction-scaffold": "tsx scripts/test-pdf-redaction-scaffold.ts"
+    "test:pdf-redaction-scaffold": "tsx scripts/test-pdf-redaction-scaffold.ts",
+    "test:ocr-offline": "tsx scripts/test-ocr-offline-assets.ts",
+    "test:sample-pdf-ocr": "tsx scripts/test-sample-pdf-ocr-audit.ts",
+    "test:tesseract-v7": "tsx scripts/test-tesseract-v7-api.ts"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "docx-preview": "^0.3.6",
     "jszip": "^3.10.1",
     "mammoth": "^1.9.1",
     "papaparse": "^5.5.3",
-    "pdfjs-dist": "^4.10.38"
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.30",

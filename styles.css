@@ -1,4 +1,4 @@
-/* AI Privacy Shield — Content-Script Overlay Styles
+/* Sani — Content-Script Overlay Styles
    Design System: Luxury Minimal (Light)
    Fonts: DM Sans / DM Mono (loaded via Google Fonts in popup & sanitizer)
    NOTE: Content scripts cannot load external fonts, so we fall back to system fonts.

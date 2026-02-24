@@ -37,9 +37,16 @@
     "48": "icon48.png",
     "128": "icon128.png"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "web_accessible_resources": [
     {
       "resources": ["sani_icon.png", "sani_text.png", "icon_soap_white.png", "icon_shield_white.png"],
+      "matches": ["<all_urls>"]
+    },
+    {
+      "resources": ["assets/ocr/*"],
       "matches": ["<all_urls>"]
     }
   ]

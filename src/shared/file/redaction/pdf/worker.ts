@@ -16,7 +16,7 @@ self.onmessage = async (event: MessageEvent<PdfRedactionWorkerRequest>) => {
 				post({ id: request.id, type: 'support', support: engine.getSupport() });
 				return;
 			case 'plan':
-				post({ id: request.id, type: 'plan', plan: engine.buildPlan(request.extractedText) });
+					post({ id: request.id, type: 'plan', plan: engine.buildPlan(request.extractedText, request.extraction) });
 				return;
 			case 'apply': {
 				const result = await engine.applyPlan(request.file, request.plan);

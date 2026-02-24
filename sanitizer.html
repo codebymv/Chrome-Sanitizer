@@ -135,10 +135,71 @@
     .main-container.active { display: block; }
 
     /* ─── Controls Panel ─────────────────────────────────── */
+    .controls-collapsible {
+      margin-bottom: 12px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      background: var(--color-surface-raised);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    .controls-toggle {
+      width: 100%;
+      border: none;
+      background: transparent;
+      color: var(--color-text-primary);
+      padding: 12px 14px;
+      font-family: var(--font-body);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: background var(--transition-fast);
+    }
+
+    .controls-toggle:hover {
+      background: var(--color-accent-subtle);
+    }
+
+    .controls-toggle-main {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .controls-toggle-meta {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--color-text-tertiary);
+      white-space: nowrap;
+    }
+
+    .controls-toggle-icon {
+      width: 14px;
+      height: 14px;
+      color: var(--color-text-tertiary);
+      transition: transform var(--transition-fast);
+      flex-shrink: 0;
+    }
+
+    .controls-toggle[aria-expanded="true"] .controls-toggle-icon {
+      transform: rotate(180deg);
+    }
+
     .controls-panel {
       display: flex;
       gap: 16px;
-      margin-bottom: 12px;
+      padding: 0 12px 12px;
+      border-top: 1px solid var(--color-border-subtle);
+    }
+
+    .controls-panel.collapsed {
+      display: none;
     }
 
     .control-field {
@@ -853,7 +914,17 @@
 
   <div class="main-container" id="mainContainer">
     <div class="status-banner" id="statusBanner" role="status" aria-live="polite"></div>
-    <div class="controls-panel">
+    <div class="controls-collapsible" id="controlsCollapsible">
+      <button type="button" class="controls-toggle" id="controlsToggleBtn" aria-expanded="false" aria-controls="controlsPanel">
+        <span class="controls-toggle-main">
+          <span>Sanitization Controls &amp; Detected PII</span>
+          <span class="controls-toggle-meta" id="controlsToggleMeta">No detected PII</span>
+        </span>
+        <svg class="controls-toggle-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M5 8l5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    <div class="controls-panel" id="controlsPanel">
       <!-- Left: Controls Card -->
       <div class="control-field controls-card">
         <div class="field-header">Controls</div>
@@ -921,6 +992,7 @@
         </div>
         <button class="clean-button" id="manualCleanBtn" disabled>Apply Selection</button>
       </div>
+    </div>
     </div>
 
     <div class="preview-container">

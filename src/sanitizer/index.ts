@@ -51,6 +51,9 @@ const preModeReplace = mustGet<HTMLButtonElement>('preModeReplace');
 const preAutoRunRow = mustGet<HTMLElement>('preAutoRunRow');
 const preAutoRunToggle = mustGet<HTMLInputElement>('preAutoRunToggle');
 const preModeHelp = mustGet<HTMLElement>('preModeHelp');
+const controlsToggleBtn = mustGet<HTMLButtonElement>('controlsToggleBtn');
+const controlsToggleMeta = mustGet<HTMLElement>('controlsToggleMeta');
+const controlsPanel = mustGet<HTMLElement>('controlsPanel');
 const manualHelperText = mustGet<HTMLElement>('manualHelperText');
 const manualSummary = mustGet<HTMLElement>('manualSummary');
 const manualList = mustGet<HTMLElement>('manualList');
@@ -74,6 +77,7 @@ let sanitizedBlob: Blob | null = null;
 let selectedAutoMode: AutoMode = 'hide';
 let autoRunOnUpload = true;
 let syncingScroll = false;
+let controlsPanelExpanded = true;
 let selectedManualMode: ManualMode = '';
 let manualSelection = new Map<string, ManualCandidate>();
 let manualCandidates: ManualCandidate[] = [];
@@ -256,6 +260,10 @@ deselectAllBtn.addEventListener('click', () => {
   renderManualPreview();
 });
 
+controlsToggleBtn.addEventListener('click', () => {
+  setControlsPanelExpanded(!controlsPanelExpanded);
+});
+
 manualList.addEventListener('click', (event) => {
   const target = event.target as HTMLElement;
   const groupHeader = target.closest<HTMLElement>('.pii-group-header');
@@ -367,10 +375,26 @@ function setAutoRunPreference(enabled: boolean, persist: boolean): void {
   preAutoRunToggle.checked = enabled;
   autoCleanBtn.textContent = enabled ? 'Re-run' : 'Clean';
   updatePreModeUi(selectedAutoMode);
+  setControlsPanelExpanded(!enabled);
 
   if (persist) {
     void chrome.storage.local.set({ [AUTO_RUN_STORAGE_KEY]: enabled });
   }
+}
+
+function setControlsPanelExpanded(expanded: boolean): void {
+  controlsPanelExpanded = expanded;
+  controlsPanel.classList.toggle('collapsed', !expanded);
+  controlsToggleBtn.setAttribute('aria-expanded', String(expanded));
+}
+
+function updateControlsToggleMeta(): void {
+  if (manualCandidates.length === 0) {
+    controlsToggleMeta.textContent = 'No detected PII';
+    return;
+  }
+
+  controlsToggleMeta.textContent = `${manualSelection.size}/${manualCandidates.length} selected`;
 }
 
 function applySelectedMode(mode: AutoMode, persist: boolean): void {
@@ -390,6 +414,9 @@ function applySelectedMode(mode: AutoMode, persist: boolean): void {
 function setStatus(message: string, tone: StatusTone): void {
   statusBanner.textContent = message;
   statusBanner.className = `status-banner visible ${tone}`;
+  if (tone === 'warning' || tone === 'error') {
+    setControlsPanelExpanded(true);
+  }
 }
 
 function clearStatus(): void {
@@ -433,6 +460,7 @@ function clearEverything(): void {
   pendingPopupCandidateIds = [];
   requiresManualExportOverride = false;
   pendingManualOverrideHighRiskCount = 0;
+  setControlsPanelExpanded(!autoRunOnUpload);
   hideManualSelectionPopup();
 
   autoModeRadios.forEach((radio) => {
@@ -1369,6 +1397,7 @@ function updateManualReviewUi(): void {
     manualSummary.textContent = 'No detected values found in this file.';
     manualList.innerHTML = '';
     manualCleanBtn.disabled = true;
+    updateControlsToggleMeta();
     return;
   }
 
@@ -1424,6 +1453,7 @@ function updateManualReviewUi(): void {
   });
 
   manualCleanBtn.disabled = !selectedManualMode || selectedCount === 0;
+  updateControlsToggleMeta();
 }
 
 function updateManualHelperText(message?: string): void {

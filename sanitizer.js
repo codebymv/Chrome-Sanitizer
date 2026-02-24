@@ -53804,6 +53804,9 @@ section.${c}>footer { z-index: 1; }
   var preAutoRunRow = mustGet("preAutoRunRow");
   var preAutoRunToggle = mustGet("preAutoRunToggle");
   var preModeHelp = mustGet("preModeHelp");
+  var controlsToggleBtn = mustGet("controlsToggleBtn");
+  var controlsToggleMeta = mustGet("controlsToggleMeta");
+  var controlsPanel = mustGet("controlsPanel");
   var manualHelperText = mustGet("manualHelperText");
   var manualSummary = mustGet("manualSummary");
   var manualList = mustGet("manualList");
@@ -53825,6 +53828,7 @@ section.${c}>footer { z-index: 1; }
   var selectedAutoMode = "hide";
   var autoRunOnUpload = true;
   var syncingScroll = false;
+  var controlsPanelExpanded = true;
   var selectedManualMode = "";
   var manualSelection = /* @__PURE__ */ new Map();
   var manualCandidates = [];
@@ -53972,6 +53976,9 @@ section.${c}>footer { z-index: 1; }
     updateManualReviewUi();
     renderManualPreview();
   });
+  controlsToggleBtn.addEventListener("click", () => {
+    setControlsPanelExpanded(!controlsPanelExpanded);
+  });
   manualList.addEventListener("click", (event) => {
     const target = event.target;
     const groupHeader = target.closest(".pii-group-header");
@@ -54062,9 +54069,22 @@ section.${c}>footer { z-index: 1; }
     preAutoRunToggle.checked = enabled;
     autoCleanBtn.textContent = enabled ? "Re-run" : "Clean";
     updatePreModeUi(selectedAutoMode);
+    setControlsPanelExpanded(!enabled);
     if (persist) {
       void chrome.storage.local.set({ [AUTO_RUN_STORAGE_KEY]: enabled });
     }
+  }
+  function setControlsPanelExpanded(expanded) {
+    controlsPanelExpanded = expanded;
+    controlsPanel.classList.toggle("collapsed", !expanded);
+    controlsToggleBtn.setAttribute("aria-expanded", String(expanded));
+  }
+  function updateControlsToggleMeta() {
+    if (manualCandidates.length === 0) {
+      controlsToggleMeta.textContent = "No detected PII";
+      return;
+    }
+    controlsToggleMeta.textContent = `${manualSelection.size}/${manualCandidates.length} selected`;
   }
   function applySelectedMode(mode, persist) {
     selectedAutoMode = mode;
@@ -54081,6 +54101,9 @@ section.${c}>footer { z-index: 1; }
   function setStatus(message, tone) {
     statusBanner.textContent = message;
     statusBanner.className = `status-banner visible ${tone}`;
+    if (tone === "warning" || tone === "error") {
+      setControlsPanelExpanded(true);
+    }
   }
   function clearStatus() {
     statusBanner.textContent = "";
@@ -54118,6 +54141,7 @@ section.${c}>footer { z-index: 1; }
     pendingPopupCandidateIds = [];
     requiresManualExportOverride = false;
     pendingManualOverrideHighRiskCount = 0;
+    setControlsPanelExpanded(!autoRunOnUpload);
     hideManualSelectionPopup();
     autoModeRadios.forEach((radio) => {
       radio.disabled = false;
@@ -54896,6 +54920,7 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       manualSummary.textContent = "No detected values found in this file.";
       manualList.innerHTML = "";
       manualCleanBtn.disabled = true;
+      updateControlsToggleMeta();
       return;
     }
     const selectedCount = manualSelection.size;
@@ -54940,6 +54965,7 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
       cb2.indeterminate = true;
     });
     manualCleanBtn.disabled = !selectedManualMode || selectedCount === 0;
+    updateControlsToggleMeta();
   }
   function updateManualHelperText(message) {
     if (message) {

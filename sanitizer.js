@@ -634,7 +634,7 @@ manualList.addEventListener("change", (event) => {
 });
 originalPreview.addEventListener("click", (event) => {
   const target = event.target;
-  const hit = target.closest(".manual-hit");
+  const hit = target.closest(".manual-hit") ?? target.closest(".pdf-highlight-box");
   const id = hit?.dataset.manualId;
   if (!id) {
     return;
@@ -954,6 +954,7 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     } else if (decoded.kind === "pdf") {
       await renderPdfPreview(originalPreview, file);
       updateManualReviewUi();
+      applyPdfHighlights();
     } else {
       resetPreviewLayoutClass(originalPreview);
       originalPreview.innerHTML = decoded.previewHtml;
@@ -1828,6 +1829,87 @@ function updateDocxHighlights() {
     mark.className = manualSelection.has(id) ? "manual-hit manual-selected" : "manual-hit";
   });
 }
+function applyPdfHighlights() {
+  const host = originalPreview.querySelector(".pdf-preview-host");
+  const extraction = currentDecodedFile?.pdfExtraction;
+  if (!host || !extraction || manualCandidates.length === 0) {
+    return;
+  }
+  host.querySelectorAll(".pdf-highlight-layer").forEach((el) => el.remove());
+  const spans = extraction.spans;
+  if (spans.length === 0) {
+    return;
+  }
+  const candidateSpanMap = /* @__PURE__ */ new Map();
+  for (const candidate of manualCandidates) {
+    const match = candidate.match;
+    const matchStart = match.index;
+    const matchEnd = match.index + match.length;
+    const covered = spans.filter((s) => s.end > matchStart && s.start < matchEnd && s.bbox);
+    if (covered.length > 0) {
+      candidateSpanMap.set(candidate.id, covered);
+    }
+  }
+  const pageWraps = host.querySelectorAll(".pdf-preview-page-wrap");
+  pageWraps.forEach((pageWrap, index) => {
+    const pageNumber = index + 1;
+    const canvas = pageWrap.querySelector(".pdf-preview-page");
+    if (!canvas) {
+      return;
+    }
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+    const overlay = document.createElement("div");
+    overlay.className = "pdf-highlight-layer";
+    overlay.style.width = `${canvasWidth}px`;
+    overlay.style.height = `${canvasHeight}px`;
+    overlay.style.width = "100%";
+    overlay.style.aspectRatio = `${canvasWidth} / ${canvasHeight}`;
+    let hasBoxes = false;
+    for (const [candidateId, coveredSpans] of candidateSpanMap) {
+      for (const span of coveredSpans) {
+        if (span.pageNumber !== pageNumber || !span.bbox) {
+          continue;
+        }
+        const bbox = span.bbox;
+        const left = bbox.x * PDF_PREVIEW_SCALE / canvasWidth * 100;
+        const width = bbox.width * PDF_PREVIEW_SCALE / canvasWidth * 100;
+        const usedOcr = extraction.usedOcr;
+        let top;
+        if (usedOcr) {
+          top = bbox.y * PDF_PREVIEW_SCALE / canvasHeight * 100;
+        } else {
+          const topPx = (bbox.pageHeight - bbox.y - bbox.height) * PDF_PREVIEW_SCALE;
+          top = topPx / canvasHeight * 100;
+        }
+        const height = bbox.height * PDF_PREVIEW_SCALE / canvasHeight * 100;
+        const box = document.createElement("div");
+        box.className = manualSelection.has(candidateId) ? "pdf-highlight-box manual-selected" : "pdf-highlight-box";
+        box.dataset.manualId = candidateId;
+        box.style.left = `${left}%`;
+        box.style.top = `${top}%`;
+        box.style.width = `${width}%`;
+        box.style.height = `${height}%`;
+        box.title = manualCandidates.find((c) => c.id === candidateId)?.match.type ?? "";
+        overlay.appendChild(box);
+        hasBoxes = true;
+      }
+    }
+    if (hasBoxes) {
+      canvas.insertAdjacentElement("afterend", overlay);
+    }
+  });
+}
+function updatePdfHighlights() {
+  const host = originalPreview.querySelector(".pdf-preview-host");
+  if (!host) {
+    return;
+  }
+  host.querySelectorAll(".pdf-highlight-box[data-manual-id]").forEach((box) => {
+    const id = box.dataset.manualId ?? "";
+    box.className = manualSelection.has(id) ? "pdf-highlight-box manual-selected" : "pdf-highlight-box";
+  });
+}
 function renderManualPreview() {
   if (!currentFileContent || manualCandidates.length === 0) {
     return;
@@ -1837,6 +1919,7 @@ function renderManualPreview() {
     return;
   }
   if (fileType === "pdf") {
+    updatePdfHighlights();
     return;
   }
   const ordered = [...manualCandidates].sort((a, b) => a.match.index - b.match.index);

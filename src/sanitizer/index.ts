@@ -195,7 +195,7 @@ manualList.addEventListener('change', (event) => {
 
 originalPreview.addEventListener('click', (event) => {
   const target = event.target as HTMLElement;
-  const hit = target.closest<HTMLElement>('.manual-hit');
+  const hit = target.closest<HTMLElement>('.manual-hit') ?? target.closest<HTMLElement>('.pdf-highlight-box');
   const id = hit?.dataset.manualId;
   if (!id) {
     return;
@@ -598,6 +598,7 @@ async function displayDecodedFile(file: File): Promise<void> {
     } else if (decoded.kind === 'pdf') {
       await renderPdfPreview(originalPreview, file);
       updateManualReviewUi();
+      applyPdfHighlights();
     } else {
       resetPreviewLayoutClass(originalPreview);
       originalPreview.innerHTML = decoded.previewHtml;
@@ -1683,6 +1684,130 @@ function updateDocxHighlights(): void {
   });
 }
 
+/**
+ * Build a character-offset → candidate ID map from the extraction spans and
+ * the current manual candidates, then draw coloured overlay boxes on each
+ * PDF preview page canvas.
+ */
+function applyPdfHighlights(): void {
+  const host = originalPreview.querySelector<HTMLElement>('.pdf-preview-host');
+  const extraction = currentDecodedFile?.pdfExtraction;
+  if (!host || !extraction || manualCandidates.length === 0) {
+    return;
+  }
+
+  // Remove any stale overlay layers
+  host.querySelectorAll('.pdf-highlight-layer').forEach((el) => el.remove());
+
+  const spans = extraction.spans;
+  if (spans.length === 0) {
+    return;
+  }
+
+  // Map each candidate to the spans it covers
+  const candidateSpanMap = new Map<string, typeof spans>();
+  for (const candidate of manualCandidates) {
+    const match = candidate.match;
+    const matchStart = match.index;
+    const matchEnd = match.index + match.length;
+    const covered = spans.filter((s) => s.end > matchStart && s.start < matchEnd && s.bbox);
+    if (covered.length > 0) {
+      candidateSpanMap.set(candidate.id, covered);
+    }
+  }
+
+  // Group candidate spans by page number and attach to corresponding page wraps
+  const pageWraps = host.querySelectorAll<HTMLElement>('.pdf-preview-page-wrap');
+  pageWraps.forEach((pageWrap, index) => {
+    const pageNumber = index + 1;
+    const canvas = pageWrap.querySelector<HTMLCanvasElement>('.pdf-preview-page');
+    if (!canvas) {
+      return;
+    }
+
+    // The canvas is rendered at PDF_PREVIEW_SCALE but CSS scales it to fill width.
+    // The overlay must match the canvas pixel dimensions with CSS width/height
+    // matching the canvas element's display size.
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'pdf-highlight-layer';
+    overlay.style.width = `${canvasWidth}px`;
+    overlay.style.height = `${canvasHeight}px`;
+
+    // Match the canvas's CSS sizing — canvas has width:100%, height:auto
+    // so the overlay uses the same approach
+    overlay.style.width = '100%';
+    overlay.style.aspectRatio = `${canvasWidth} / ${canvasHeight}`;
+
+    let hasBoxes = false;
+
+    for (const [candidateId, coveredSpans] of candidateSpanMap) {
+      for (const span of coveredSpans) {
+        if (span.pageNumber !== pageNumber || !span.bbox) {
+          continue;
+        }
+
+        const bbox = span.bbox;
+        // bbox coordinates are in PDF native units (scale=1).
+        // Canvas was rendered at PDF_PREVIEW_SCALE. Convert to percentages
+        // of the canvas so the overlay scales with CSS.
+        const left = (bbox.x * PDF_PREVIEW_SCALE) / canvasWidth * 100;
+        const width = (bbox.width * PDF_PREVIEW_SCALE) / canvasWidth * 100;
+
+        // For native text: y is the baseline in PDF coords (origin bottom-left).
+        // For OCR text: y is already converted to top-origin in the decoder.
+        // The span bbox stores y as distance-from-top after conversion.
+        const usedOcr = extraction.usedOcr;
+        let top: number;
+        if (usedOcr) {
+          // OCR path: y is already top-origin
+          top = (bbox.y * PDF_PREVIEW_SCALE) / canvasHeight * 100;
+        } else {
+          // Native path: y is PDF bottom-origin baseline.
+          // Convert: top = pageHeight - y - height
+          const topPx = (bbox.pageHeight - bbox.y - bbox.height) * PDF_PREVIEW_SCALE;
+          top = topPx / canvasHeight * 100;
+        }
+        const height = (bbox.height * PDF_PREVIEW_SCALE) / canvasHeight * 100;
+
+        const box = document.createElement('div');
+        box.className = manualSelection.has(candidateId)
+          ? 'pdf-highlight-box manual-selected'
+          : 'pdf-highlight-box';
+        box.dataset.manualId = candidateId;
+        box.style.left = `${left}%`;
+        box.style.top = `${top}%`;
+        box.style.width = `${width}%`;
+        box.style.height = `${height}%`;
+        box.title = manualCandidates.find((c) => c.id === candidateId)?.match.type ?? '';
+        overlay.appendChild(box);
+        hasBoxes = true;
+      }
+    }
+
+    if (hasBoxes) {
+      // Insert overlay right after the canvas, inside page-wrap
+      canvas.insertAdjacentElement('afterend', overlay);
+    }
+  });
+}
+
+function updatePdfHighlights(): void {
+  const host = originalPreview.querySelector<HTMLElement>('.pdf-preview-host');
+  if (!host) {
+    return;
+  }
+
+  host.querySelectorAll<HTMLElement>('.pdf-highlight-box[data-manual-id]').forEach((box) => {
+    const id = box.dataset.manualId ?? '';
+    box.className = manualSelection.has(id)
+      ? 'pdf-highlight-box manual-selected'
+      : 'pdf-highlight-box';
+  });
+}
+
 function renderManualPreview(): void {
   if (!currentFileContent || manualCandidates.length === 0) {
     return;
@@ -1695,6 +1820,7 @@ function renderManualPreview(): void {
   }
 
   if (fileType === 'pdf') {
+    updatePdfHighlights();
     return;
   }
 

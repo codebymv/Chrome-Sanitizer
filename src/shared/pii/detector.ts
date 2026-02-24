@@ -1,5 +1,30 @@
 import type { DetectedMatch, DetectionPattern, DetectionSummary } from '../types';
 
+const HEADER_LABELS = new Set([
+  'full name',
+  'date of birth',
+  'ssn',
+  'phone',
+  'email',
+  'name',
+  'street address',
+  'city',
+  'state',
+  'zip',
+  'zip code',
+  'credit card number',
+  'expiry',
+  'cvv',
+  'bank account',
+  'medical record',
+  'medical record (sample)'
+]);
+
+function isHeaderLikeMatch(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return HEADER_LABELS.has(normalized);
+}
+
 export function detectMatches(text: string, patterns: DetectionPattern[]): DetectedMatch[] {
   const matches: DetectedMatch[] = [];
 
@@ -9,6 +34,10 @@ export function detectMatches(text: string, patterns: DetectionPattern[]): Detec
 
     while ((match = regex.exec(text)) !== null) {
       const value = match[0];
+      if (isHeaderLikeMatch(value)) {
+        continue;
+      }
+
       if (pattern.validate && !pattern.validate(value)) {
         continue;
       }

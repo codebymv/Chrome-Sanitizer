@@ -363,8 +363,7 @@
       setTimeout(createShield, 100);
     }
     openSanitizerTool() {
-      const sanitizerUrl = chrome.runtime.getURL("sanitizer.html");
-      window.open(sanitizerUrl, "_blank");
+      void chrome.runtime.sendMessage({ action: "openSanitizer" });
     }
     makeDraggable(element, wrenchElement) {
       let startY = 0;

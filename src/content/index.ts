@@ -146,8 +146,7 @@ class PrivacyShield {
 	}
 
 	private openSanitizerTool(): void {
-		const sanitizerUrl = chrome.runtime.getURL('sanitizer.html');
-		window.open(sanitizerUrl, '_blank');
+		void chrome.runtime.sendMessage({ action: 'openSanitizer' });
 	}
 
 	private makeDraggable(element: HTMLDivElement, wrenchElement: HTMLDivElement): void {

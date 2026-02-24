@@ -14,7 +14,8 @@ const extensionConfig = {
   ...shared,
   entryPoints: {
     'content-script': 'src/content/index.ts',
-    popup: 'src/popup/index.ts'
+    popup: 'src/popup/index.ts',
+    background: 'src/background/index.ts'
   },
   format: 'iife',
 };

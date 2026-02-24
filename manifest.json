@@ -5,8 +5,12 @@
   "description": "Sani — Detect and sanitize PII in AI chat inputs and file uploads",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "tabs"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "host_permissions": [
     "<all_urls>"
   ],

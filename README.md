@@ -1,4 +1,4 @@
-# Sani 🧼
+# SANI 🧼
 
 Sani is a Chrome extension for detecting sensitive data before it leaves your browser. It watches AI chat inputs and file uploads, alerts you when PII is found, and includes a dedicated File Sanitizer for creating cleaned copies of supported files.
 

@@ -540,6 +540,7 @@ async function displayDecodedFile(file: File): Promise<void> {
     if (decoded.kind === 'docx') {
       await renderDocxPreview(originalPreview, file);
       updateManualReviewUi();
+      applyDocxHighlights();
     } else {
       originalPreview.classList.remove('docx-layout');
       originalPreview.innerHTML = decoded.previewHtml;
@@ -1260,9 +1261,9 @@ function renderManualPreview(): void {
     return;
   }
 
-  // DOCX files use the rich docx-preview render — never overwrite it with plain text.
-  // The PII checklist panel and text-selection popup handle selection for DOCX.
+  // For DOCX the rich render is already in place — just update mark classes.
   if (fileType === 'docx') {
+    updateDocxHighlights();
     return;
   }
 

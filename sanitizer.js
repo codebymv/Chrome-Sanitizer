@@ -923,6 +923,7 @@ ${decoded.unsupportedReason ?? "Unsupported file format."}</pre>`;
     if (decoded.kind === "docx") {
       await renderDocxPreview(originalPreview, file);
       updateManualReviewUi();
+      applyDocxHighlights();
     } else {
       originalPreview.classList.remove("docx-layout");
       originalPreview.innerHTML = decoded.previewHtml;
@@ -1513,6 +1514,7 @@ function renderManualPreview() {
     return;
   }
   if (fileType === "docx") {
+    updateDocxHighlights();
     return;
   }
   const ordered = [...manualCandidates].sort((a, b) => a.match.index - b.match.index);

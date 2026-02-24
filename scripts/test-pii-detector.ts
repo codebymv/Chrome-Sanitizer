@@ -26,6 +26,11 @@ const cases: Case[] = [
     expectedKeys: ['apiKey', 'authToken']
   },
   {
+    name: 'detects table-style addresses, masked accounts, and medical ids',
+    text: 'Name Jane A. Doe 742 Evergreen Terrace Springfield IL 62704 Expiry 08/27 CVV 123 Bank Account ****4321 MRN: 00123456 NPI: 1234567890 Insurance ID: BCBS-987654321 Group: 45678',
+    expectedKeys: ['fullNameContextual', 'streetAddressLoose', 'zipCode', 'cardExpiry', 'cvv', 'bankAccountMasked', 'mrn', 'npi', 'insuranceId', 'groupNumber']
+  },
+  {
     name: 'does not match invalid ipv4 values',
     text: 'invalid ip 999.999.999.999 should not match',
     expectedKeys: [],

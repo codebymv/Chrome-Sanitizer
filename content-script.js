@@ -124,7 +124,7 @@
       key: "fullNameContextual",
       label: "Full Name",
       severity: "high",
-      regex: /(?<=\b(?:full\s*name|name)\s*:\s*)[A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z]+){1,3}\b/gi
+      regex: /(?<=\b(?:full\s*name|name)\b(?:\s*:\s*|\s+))[A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z]+){1,3}\b/gi
     },
     {
       key: "ssn",
@@ -143,7 +143,13 @@
       key: "bankAccount",
       label: "Bank Account Number",
       severity: "critical",
-      regex: /(?<=\bbank\s*account(?:\s*number)?\s*:\s*)\d{8,17}\b/gi
+      regex: /(?<=\bbank\s*account(?:\s*number)?\b(?:\s*:\s*|\s+))\d{8,17}\b/gi
+    },
+    {
+      key: "bankAccountMasked",
+      label: "Bank Account Number",
+      severity: "high",
+      regex: /(?<!\w)\*{2,}\d{3,6}\b/g
     },
     {
       key: "routingNumber",
@@ -155,13 +161,20 @@
       key: "cvv",
       label: "CVV",
       severity: "critical",
-      regex: /(?<=\b(?:cvv|cvc|security\s*code)\s*:\s*)\d{3,4}\b/gi
+      regex: /(?<=\b(?:cvv|cvc|security\s*code)\b(?:\s*:\s*|\s+))\d{3,4}\b/gi
     },
     {
       key: "cardExpiry",
       label: "Card Expiry",
       severity: "high",
-      regex: /(?<=\b(?:exp|expiry|expiration)\s*:\s*)(?:0[1-9]|1[0-2])[\/-](?:\d{2}|\d{4})\b/gi,
+      regex: /(?<=\b(?:exp|expiry|expiration)\b(?:\s*:\s*|\s+))(?:0[1-9]|1[0-2])[\/-](?:\d{2}|\d{4})\b/gi,
+      validate: (match) => isLikelyExpiry(match)
+    },
+    {
+      key: "cardExpiryLoose",
+      label: "Card Expiry",
+      severity: "medium",
+      regex: /\b(?:0[1-9]|1[0-2])[\/-]\d{2}\b/g,
       validate: (match) => isLikelyExpiry(match)
     },
     {
@@ -174,13 +187,19 @@
       key: "phone",
       label: "Phone Number",
       severity: "high",
-      regex: /(\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g
+      regex: /(\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b/g
     },
     {
       key: "streetAddress",
       label: "Street Address",
       severity: "high",
       regex: /(?<=\baddress\s*:\s*)\d+\s+[A-Za-z0-9.'#\-\s]+,\s*(?:[A-Za-z0-9.'#\-\s]+,\s*)?[A-Za-z.\-\s]+,\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?\b/gi
+    },
+    {
+      key: "streetAddressLoose",
+      label: "Street Address",
+      severity: "medium",
+      regex: /\b\d{1,6}[A-Za-z]?\s+[A-Za-z0-9.'#\-]+(?:\s+[A-Za-z0-9.'#\-]+){0,5}\s(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Way|Terrace|Ter|Loop|Place|Pl|Parkway|Pkwy|Circle|Cir)\b(?:\s+(?:Apt|Apartment|Suite|Ste|Unit)\s*[A-Za-z0-9\-]+)?(?:\s+(?:N|S|E|W|NE|NW|SE|SW))?/gi
     },
     {
       key: "zipCode",
@@ -205,6 +224,30 @@
       label: "Date of Birth",
       severity: "high",
       regex: /\b(0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12][0-9]|3[01])[\/\-](19|20)\d{2}\b/g
+    },
+    {
+      key: "mrn",
+      label: "Medical Record Number",
+      severity: "high",
+      regex: /(?<=\b(?:mrn|medical\s*record(?:\s*number)?)\b(?:\s*:\s*|\s+))[A-Z0-9\-]{6,20}\b/gi
+    },
+    {
+      key: "npi",
+      label: "Provider Identifier",
+      severity: "high",
+      regex: /\bnpi\b(?:\s*:\s*|\s+)\d{10}\b/gi
+    },
+    {
+      key: "insuranceId",
+      label: "Insurance ID",
+      severity: "high",
+      regex: /\b(?:insurance\s*id|member\s*id|policy\s*id)\b(?:\s*:\s*|\s+)[A-Z0-9\-]{6,20}\b/gi
+    },
+    {
+      key: "groupNumber",
+      label: "Insurance Group",
+      severity: "medium",
+      regex: /\bgroup\b(?:\s*:\s*|\s+)[A-Z0-9\-]{3,12}\b/gi
     },
     {
       key: "ipAddress",

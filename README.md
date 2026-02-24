@@ -10,7 +10,8 @@ A Chrome extension that automatically detects and alerts you about Personally Id
 ✅ **Severity Levels** - Critical, High, Medium, and Low risk categorization
 ✅ **10 Data Types** - Comprehensive PII detection
 ✅ **Session Statistics** - Track detections across your browsing session
-✅ **Non-Intrusive** - Alerts only, never modifies your content
+✅ **Warning-Only Protection** - In-page monitoring alerts without blocking submission
+✅ **Optional File Sanitizer** - Open a dedicated tool to create sanitized file copies
 ✅ **Works Everywhere** - Compatible with Claude, ChatGPT, Gemini, and Copilot
 
 ## Detected Information Types
@@ -58,14 +59,12 @@ Visit any supported AI chatbot site (Claude.ai, ChatGPT, Gemini, Copilot) and st
 
 ## Usage
 
-### Try the Interactive Demo
-Open `demo.html` in your browser to test the extension's detection capabilities without installing it.
-
 ### Control Panel
 Click the extension icon to:
 - Toggle detection on/off
 - View session statistics (PII instances found)
 - See detection breakdown by type
+- Open the File Sanitizer for TXT/CSV/DOCX workflows
 
 ### Understanding Alerts
 - **Inline Warnings**: Yellow badges appear below text fields when PII is detected
@@ -83,20 +82,22 @@ If you intentionally want to send PII:
 ## Files Included
 
 - `manifest.json` - Extension configuration
-- `content.js` - Main detection and redaction logic
+- `content-script.js` - Main bundled detection and alert logic for page inputs/uploads
 - `popup.html` - Extension popup interface
 - `popup.js` - Popup functionality
+- `sanitizer.html` - File Sanitizer UI
+- `sanitizer.js` - File Sanitizer logic bundle
 - `styles.css` - Extension styling
 - `icon16.png`, `icon48.png`, `icon128.png` - Extension icons
-- `demo.html` - Interactive demonstration page
 - `README.md` - This file
 
 ## Privacy & Security
 
 - **No Data Collection**: This extension does NOT collect, store, or transmit any data
 - **Local Processing**: All detection happens locally in your browser
-- **No Network Requests**: The extension never makes external API calls
-- **No Content Modification**: Your text is never altered - only notifications are shown
+- **No External API Calls**: The extension does not send your content to external services
+- **In-Page Warning Mode**: Chat input monitoring only shows alerts and does not alter text
+- **Optional Local File Output**: File Sanitizer generates a sanitized copy only when you run it and download it
 - **Open Source**: All code is visible and auditable
 - **Client-Side Only**: Everything runs in your browser extension
 
@@ -116,11 +117,10 @@ If you intentionally want to send PII:
 
 **No alerts appearing?**
 - The extension only alerts when PII patterns are detected
-- Test with the demo.html file to verify it's working
 - Some patterns may have false positives/negatives
 
 **Want to customize detection?**
-- Edit the regex patterns in `content.js` to add/modify rules
+- Edit the regex patterns in `src/shared/pii/patterns.ts` to add/modify rules
 - Adjust severity levels for different data types
 - Add new PII categories as needed
 

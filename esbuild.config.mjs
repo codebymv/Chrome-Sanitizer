@@ -4,6 +4,7 @@ const watch = process.argv.includes('--watch');
 
 const config = {
   entryPoints: {
+    'content-script': 'src/content/index.ts',
     popup: 'src/popup/index.ts',
     sanitizer: 'src/sanitizer/index.ts'
   },

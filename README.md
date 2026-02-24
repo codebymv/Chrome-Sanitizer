@@ -1,148 +1,107 @@
-# AI Privacy Shield 🛡️
+# Sani 🧼
 
-A Chrome extension that automatically detects and alerts you about Personally Identifiable Information (PII) before you send it to AI chatbots or upload files.
+Sani is a Chrome extension for detecting sensitive data before it leaves your browser. It watches AI chat inputs and file uploads, alerts you when PII is found, and includes a dedicated File Sanitizer for creating cleaned copies of supported files.
 
-## Features
+## What’s Included
 
-✅ **Real-Time Detection** - Identifies PII as you type or paste
-✅ **File Scanning** - Analyzes uploaded text files for sensitive data
-✅ **Visual Alerts** - Clear notifications when PII is detected
-✅ **Severity Levels** - Critical, High, Medium, and Low risk categorization
-✅ **10 Data Types** - Comprehensive PII detection
-✅ **Session Statistics** - Track detections across your browsing session
-✅ **Warning-Only Protection** - In-page monitoring alerts without blocking submission
-✅ **Optional File Sanitizer** - Open a dedicated tool to create sanitized file copies
-✅ **Works Everywhere** - Compatible with Claude, ChatGPT, Gemini, and Copilot
+- **In-page PII detection** for typed, pasted, and uploaded content
+- **Severity-based alerts** (critical/high/medium/low)
+- **Session + history stats** in the popup
+- **Draggable on-page shield + quick-open sanitizer button**
+- **File Sanitizer** with side-by-side preview and auto/manual cleaning modes
+- **Hardening controls** (upload preflight checks, CSV formula neutralization, timeout guards, DOCX unsafe-content checks)
 
-## Detected Information Types
+## Current Detection Coverage
 
-| Type | Severity | Example |
-|------|----------|---------|
-| **Social Security Numbers** | Critical | `123-45-6789` |
-| **Credit Card Numbers** | Critical | `4532-1234-5678-9012` |
-| **Passport Numbers** | Critical | `AB1234567` |
-| **Email Addresses** | High | `john@example.com` |
-| **Phone Numbers** | High | `(555) 123-4567` |
-| **Dates of Birth** | High | `01/15/1990` |
-| **Driver's Licenses** | High | `D1234567` |
-| **Street Addresses** | Medium | `123 Main Street` |
-| **IP Addresses** | Medium | `192.168.1.1` |
-| **ZIP Codes** | Low | `90210` |
+Sani currently detects patterns including:
+
+- Full names (contextual)
+- SSNs
+- Credit cards
+- Bank account + routing numbers
+- CVV + card expiry
+- Email addresses
+- Phone numbers
+- Street addresses + ZIP codes
+- Passport + driver’s license
+- Date of birth
+- IP addresses
+- API keys + auth tokens
+
+Detection rules live in `src/shared/pii/patterns.ts` and can be customized.
 
 ## How It Works
 
-**Detection Mode** - The extension operates in notification-only mode:
+### 1) Browser-page protection (warning-only)
 
-1. **Monitor**: Watches text inputs and file uploads on AI platforms
-2. **Scan**: Analyzes content for PII patterns using regex detection
-3. **Alert**: Displays severity-coded notifications when PII is found
-4. **Inform**: Shows specific examples and counts
-5. **Empower**: You decide whether to proceed or remove the PII
+The content script monitors chat UIs and uploads, scans with local regex/validator logic, and shows warnings without silently changing your text.
 
-**No Auto-Redaction** - Your content is never modified. The extension only notifies you so you can make informed decisions.
+### 2) File Sanitizer (optional)
 
-### Step 1: Download the Extension
-Clone or download this repository, then use the repository root folder (this folder) when loading the unpacked extension.
+The sanitizer supports TXT/CSV/TSV/JSON/XML/LOG/HTML/MD/DOCX/PDF and common image uploads for detection workflows.
 
-### Step 2: Enable Developer Mode
-1. Open Google Chrome
-2. Navigate to `chrome://extensions/`
-3. Toggle on **Developer mode** in the top-right corner
+- **Auto Clean**
+	- `Hide`: masks detected values with block characters
+	- `Replace`: swaps values with safe synthetic replacements
+- **Manual Clean**
+	- Review individual hits
+	- Select exactly what to sanitize
+	- Re-run and export
 
-### Step 3: Load the Extension
-1. Click the **Load unpacked** button
-2. Select the folder containing the extension files
-3. The AI Privacy Shield icon should appear in your extensions bar
+### 3) Format-aware behavior
 
-### Step 4: Start Using
-Visit any supported AI chatbot site (Claude.ai, ChatGPT, Gemini, Copilot) and start typing. The extension will alert you if PII is detected!
+- **DOCX**: supports metadata/content sanitization with additional safety checks
+- **CSV/TSV**: neutralizes potential spreadsheet formula injection output
+- **PDF**: detection is supported; downloadable object-level redaction is still intentionally disabled (detect-only scaffold)
 
-## Usage
+## Privacy Model
 
-### Control Panel
-Click the extension icon to:
-- Toggle detection on/off
-- View session statistics (PII instances found)
-- See detection breakdown by type
-- Open the File Sanitizer for TXT/CSV/DOCX workflows
+- No external API calls for user content
+- No server-side processing
+- Local browser-side detection/sanitization only
+- Storage is limited to extension settings/stats (`shieldEnabled`, `overlayEnabled`, session/history/latest detection)
 
-### Understanding Alerts
-- **Inline Warnings**: Yellow badges appear below text fields when PII is detected
-- **Submit Alerts**: Detailed notifications before sending messages
-- **File Alerts**: Notifications when uploading files containing PII
-- **Severity Levels**: Color-coded (Red=Critical, Orange=High, Blue=Medium, Gray=Low)
+## Install (Unpacked)
 
-### Manual Override
-If you intentionally want to send PII:
-1. Review the alert to understand what was detected
-2. Click "I Understand" to dismiss
-3. Proceed with sending your message
-4. Or, temporarily disable detection via the extension icon
+1. Clone/download this repo.
+2. (Optional) Build bundles:
+	 - `npm install`
+	 - `npm run build`
+3. Open Chrome → `chrome://extensions/`
+4. Enable **Developer mode**
+5. Click **Load unpacked** and select this repo folder.
 
-## Files Included
+## Development
 
-- `manifest.json` - Extension configuration
-- `content-script.js` - Main bundled detection and alert logic for page inputs/uploads
-- `popup.html` - Extension popup interface
-- `popup.js` - Popup functionality
-- `sanitizer.html` - File Sanitizer UI
-- `sanitizer.js` - File Sanitizer logic bundle
-- `styles.css` - Extension styling
-- `icon16.png`, `icon48.png`, `icon128.png` - Extension icons
-- `README.md` - This file
+- `npm run build` — one-time build
+- `npm run watch` — watch and rebuild
+- `npm run typecheck` — TypeScript checks
 
-## Privacy & Security
+### Test Scripts
 
-- **No Data Collection**: This extension does NOT collect, store, or transmit any data
-- **Local Processing**: All detection happens locally in your browser
-- **No External API Calls**: The extension does not send your content to external services
-- **In-Page Warning Mode**: Chat input monitoring only shows alerts and does not alter text
-- **Optional Local File Output**: File Sanitizer generates a sanitized copy only when you run it and download it
-- **Open Source**: All code is visible and auditable
-- **Client-Side Only**: Everything runs in your browser extension
+- `npm run test:detector`
+- `npm run test:content-utils`
+- `npm run test:sanitizer-hardening`
+- `npm run test:pdf-redaction-scaffold`
+- `npm run test:docx -- <path-to-docx> --mode=hide|replace`
 
-## Supported Websites
+## Supported Sites (for chat monitoring)
 
 - claude.ai
 - chat.openai.com
 - gemini.google.com
 - copilot.microsoft.com
 
-## Troubleshooting
+## Project Structure
 
-**Extension not detecting?**
-- Refresh the AI chatbot page after installing
-- Make sure detection is toggled ON in the extension popup
-- Check that the extension is enabled in chrome://extensions/
+- `src/content` — on-page monitoring + alerts
+- `src/popup` — popup UI and stats
+- `src/sanitizer` — sanitizer app logic + hardening
+- `src/shared` — detection, storage, file decoders, shared types
+- `scripts` — test and verification scripts
+- `docs` — release and readiness checklists
 
-**No alerts appearing?**
-- The extension only alerts when PII patterns are detected
-- Some patterns may have false positives/negatives
+## Notes
 
-**Want to customize detection?**
-- Edit the regex patterns in `src/shared/pii/patterns.ts` to add/modify rules
-- Adjust severity levels for different data types
-- Add new PII categories as needed
-
-## Future Enhancements
-
-Potential features for future versions:
-- Custom detection rules through UI
-- Whitelist for trusted contexts
-- Export detection logs
-- Support for more data types (bank accounts, medical IDs, etc.)
-- Multi-language support
-- Machine learning-based detection
-- Context-aware sensitivity (e.g., doctor discussing medical info)
-
-## Contributing
-
-This is an open-source project. Feel free to:
-- Report issues or false positives/negatives
-- Suggest new PII patterns to detect
-- Improve detection accuracy
-- Enhance the UI/UX
-
----
-
-**Important Note**: While this extension provides PII detection capabilities, no automated system is 100% accurate. Always review your messages before sending when dealing with highly sensitive information. The extension is a helpful tool, not a replacement for conscious privacy practices.
+- Detection is heuristic and may produce false positives/negatives.
+- Always review sensitive content manually before sharing.

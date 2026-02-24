@@ -1747,7 +1747,7 @@ function csvToTable(csvText) {
 }
 async function decodeUploadedFileLazy(file) {
   if (!decodeUploadedFilePromise) {
-    decodeUploadedFilePromise = import("./chunks/registry-3UVRGQNI.js");
+    decodeUploadedFilePromise = import("./chunks/registry-KNRY7333.js");
   }
   const module = await decodeUploadedFilePromise;
   return module.decodeUploadedFile(file);

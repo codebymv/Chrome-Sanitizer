@@ -8,7 +8,29 @@ interface PdfTextItem {
   str?: string;
 }
 
+let workerConfigured = false;
+
+function ensurePdfWorkerConfigured(): void {
+  if (workerConfigured) {
+    return;
+  }
+
+  try {
+    if (!pdfjs.GlobalWorkerOptions.workerPort) {
+      pdfjs.GlobalWorkerOptions.workerPort = new Worker(
+        new URL('pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url),
+        { type: 'module' }
+      );
+    }
+  } catch (error) {
+    console.warn('PDF.js worker setup failed. Falling back to default worker resolution.', error);
+  }
+
+  workerConfigured = true;
+}
+
 export async function decodePdfFile(file: File, extension: string): Promise<DecodedFile> {
+  ensurePdfWorkerConfigured();
   const buffer = await file.arrayBuffer();
   const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer) });
 

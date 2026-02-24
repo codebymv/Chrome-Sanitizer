@@ -34,6 +34,11 @@ interface OcrRecognizeResult {
   };
 }
 
+interface OcrRuntime {
+  recognize: (image: string, language: string) => Promise<OcrRecognizeResult>;
+  dispose: () => Promise<void>;
+}
+
 let workerBootstrapPromise: Promise<void> | null = null;
 let tesseractPromise: Promise<typeof import('tesseract.js')> | null = null;
 
@@ -67,6 +72,47 @@ async function loadTesseract(): Promise<typeof import('tesseract.js')> {
     tesseractPromise = import('tesseract.js');
   }
   return tesseractPromise;
+}
+
+async function createOcrRuntime(): Promise<OcrRuntime> {
+  const module = await loadTesseract();
+  const runtime = module as unknown as {
+    recognize?: (image: string, language?: string) => Promise<OcrRecognizeResult>;
+    createWorker?: (language?: string) => Promise<{
+      recognize: (image: string) => Promise<OcrRecognizeResult>;
+      terminate?: () => Promise<void>;
+    }>;
+    default?: {
+      recognize?: (image: string, language?: string) => Promise<OcrRecognizeResult>;
+      createWorker?: (language?: string) => Promise<{
+        recognize: (image: string) => Promise<OcrRecognizeResult>;
+        terminate?: () => Promise<void>;
+      }>;
+    };
+  };
+
+  const recognize = runtime.recognize ?? runtime.default?.recognize;
+  if (typeof recognize === 'function') {
+    return {
+      recognize: async (image, language) => recognize(image, language),
+      dispose: async () => Promise.resolve()
+    };
+  }
+
+  const createWorker = runtime.createWorker ?? runtime.default?.createWorker;
+  if (typeof createWorker !== 'function') {
+    throw new Error('OCR runtime is unavailable: tesseract recognize/createWorker not found.');
+  }
+
+  const worker = await createWorker('eng');
+  return {
+    recognize: async (image) => worker.recognize(image),
+    dispose: async () => {
+      if (typeof worker.terminate === 'function') {
+        await worker.terminate();
+      }
+    }
+  };
 }
 
 function normalizeTokenText(text: string): string {
@@ -167,82 +213,86 @@ async function extractWithOcr(doc: pdfjs.PDFDocumentProxy): Promise<{ pageTexts:
   let discardedWords = 0;
   const pageCount = Math.min(doc.numPages, MAX_PDF_OCR_PAGES);
   const OCR_SCALE = 1.8;
-  const { recognize } = await loadTesseract();
+  const ocr = await createOcrRuntime();
 
-  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
-    const page = await doc.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: OCR_SCALE });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.ceil(viewport.width);
-    canvas.height = Math.ceil(viewport.height);
+  try {
+    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+      const page = await doc.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: OCR_SCALE });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
 
-    const context = canvas.getContext('2d');
-    if (!context) {
-      continue;
-    }
-
-    await page.render({ canvasContext: context, viewport }).promise;
-    const image = canvas.toDataURL('image/png');
-    const result = await recognize(image, 'eng') as OcrRecognizeResult;
-    const words = result.data?.words ?? [];
-    const pageTokens: string[] = [];
-
-    if (pageTexts.length > 0) {
-      cursor += 2;
-    }
-
-    for (const word of words) {
-      const tokenText = normalizeTokenText(word.text ?? '');
-      if (!tokenText) {
+      const context = canvas.getContext('2d');
+      if (!context) {
         continue;
       }
 
-      const confidence = Number(word.confidence ?? 0);
-      const hasConfidence = Number.isFinite(confidence) && confidence > 0;
-      if (hasConfidence) {
-        confidenceSum += confidence;
-        confidenceCount += 1;
+      await page.render({ canvasContext: context, viewport }).promise;
+      const image = canvas.toDataURL('image/png');
+      const result = await ocr.recognize(image, 'eng');
+      const words = result.data?.words ?? [];
+      const pageTokens: string[] = [];
+
+      if (pageTexts.length > 0) {
+        cursor += 2;
       }
 
-      if (hasConfidence && confidence < MIN_PDF_OCR_WORD_CONFIDENCE) {
-        discardedWords += 1;
+      for (const word of words) {
+        const tokenText = normalizeTokenText(word.text ?? '');
+        if (!tokenText) {
+          continue;
+        }
+
+        const confidence = Number(word.confidence ?? 0);
+        const hasConfidence = Number.isFinite(confidence) && confidence > 0;
+        if (hasConfidence) {
+          confidenceSum += confidence;
+          confidenceCount += 1;
+        }
+
+        if (hasConfidence && confidence < MIN_PDF_OCR_WORD_CONFIDENCE) {
+          discardedWords += 1;
+          continue;
+        }
+
+        if (pageTokens.length > 0) {
+          cursor += 1;
+        }
+
+        const bbox = word.bbox;
+        const x0 = Number(bbox?.x0 ?? 0);
+        const y0 = Number(bbox?.y0 ?? 0);
+        const x1 = Number(bbox?.x1 ?? x0 + 1);
+        const y1 = Number(bbox?.y1 ?? y0 + 8);
+        const width = Math.max(x1 - x0, 1);
+        const height = Math.max(y1 - y0, 8);
+
+        cursor = pushSpan(spans, pageNumber, tokenText, cursor, {
+          x: x0 / OCR_SCALE,
+          y: (viewport.height - y1) / OCR_SCALE,
+          width: width / OCR_SCALE,
+          height: height / OCR_SCALE,
+          pageHeight: viewport.height / OCR_SCALE
+        });
+
+        pageTokens.push(tokenText);
+      }
+
+      const pageText = pageTokens.join(' ');
+      if (!pageText) {
         continue;
       }
 
-      if (pageTokens.length > 0) {
-        cursor += 1;
+      extractedChars += pageText.length;
+      if (extractedChars > MAX_PDF_EXTRACTED_CHARS) {
+        throw new Error(`PDF OCR text exceeds maximum supported extraction size (${MAX_PDF_EXTRACTED_CHARS} chars).`);
       }
 
-      const bbox = word.bbox;
-      const x0 = Number(bbox?.x0 ?? 0);
-      const y0 = Number(bbox?.y0 ?? 0);
-      const x1 = Number(bbox?.x1 ?? x0 + 1);
-      const y1 = Number(bbox?.y1 ?? y0 + 8);
-      const width = Math.max(x1 - x0, 1);
-      const height = Math.max(y1 - y0, 8);
-
-      cursor = pushSpan(spans, pageNumber, tokenText, cursor, {
-        x: x0 / OCR_SCALE,
-        y: (viewport.height - y1) / OCR_SCALE,
-        width: width / OCR_SCALE,
-        height: height / OCR_SCALE,
-        pageHeight: viewport.height / OCR_SCALE
-      });
-
-      pageTokens.push(tokenText);
+      pageTexts.push(pageText);
     }
-
-    const pageText = pageTokens.join(' ');
-    if (!pageText) {
-      continue;
-    }
-
-    extractedChars += pageText.length;
-    if (extractedChars > MAX_PDF_EXTRACTED_CHARS) {
-      throw new Error(`PDF OCR text exceeds maximum supported extraction size (${MAX_PDF_EXTRACTED_CHARS} chars).`);
-    }
-
-    pageTexts.push(pageText);
+  } finally {
+    await ocr.dispose();
   }
 
   return {
